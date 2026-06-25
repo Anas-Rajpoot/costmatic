@@ -34,15 +34,15 @@ export default function App() {
           <Route element={<AppShell />}>
             <Route index element={<Navigate to="/sales" replace />} />
 
-            {/* Routes accessible to all authenticated users */}
+            {/* Routes accessible to all authenticated users (admin + employee) */}
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/sales"     element={<SalesPage />} />
-            <Route path="/customers" element={<CustomersPage />} />
-            <Route path="/reports"   element={<ReportsPage />} />
 
             {/* Admin-only routes — employees are redirected to /dashboard */}
             <Route element={<RequireAdmin />}>
               <Route path="/products"  element={<ProductsPage />} />
+              <Route path="/customers" element={<CustomersPage />} />
+              <Route path="/reports"   element={<ReportsPage />} />
               <Route path="/suppliers" element={<SuppliersPage />} />
               <Route path="/purchases" element={<PurchasesPage />} />
               <Route path="/settings"  element={<SettingsPage />} />

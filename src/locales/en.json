@@ -252,7 +252,10 @@
     "sectionBasic": "Product Details",
     "sectionPricing": "Pricing & Stock",
     "sectionUnits": "Selling Units",
-    "unitPieceNote": "Piece is always required (factor = 1)"
+    "unitPieceNote": "Piece is always required (factor = 1)",
+    "scan": "Scan",
+    "scanHint": "Use a USB scanner (just type into the field) or tap Scan for the camera.",
+    "barcodeExists": "This barcode is already used by another product."
   },
   "categories": {
     "title": "Manage Categories",
@@ -310,6 +313,15 @@
     "inactive": "Inactive",
     "admin": "Admin",
     "employee": "Employee",
-    "createNote": "To add new staff, create their account in the Supabase dashboard (Authentication → Users → Add user). Their profile appears here automatically after first login."
+    "createNote": "Employees can only access Sales, Products, and the Dashboard. Use the button above to add staff.",
+    "addEmployee": "Add Employee",
+    "newEmployee": "New Employee",
+    "fullName": "Full Name",
+    "password": "Password",
+    "passwordHint": "Minimum 6 characters. Share these credentials with the employee.",
+    "create": "Create Account",
+    "creating": "Creating…",
+    "createError": "Could not create the account",
+    "emailConfirmNote": "They can sign in immediately (ensure email confirmation is disabled in Supabase Auth settings)."
   }
 }

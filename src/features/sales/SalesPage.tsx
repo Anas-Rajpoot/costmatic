@@ -59,7 +59,7 @@ function openReceiptWindow(data: ReceiptData) {
     .map(
       item => `
       <tr>
-        <td>${item.product_name}</td>
+        <td class="ur">${item.product_name}</td>
         <td style="text-align:center">${item.quantity}&nbsp;${item.unit_name}</td>
         <td style="text-align:right">${formatPKR(item.unit_price)}</td>
         <td style="text-align:center">${item.discount_pct > 0 ? item.discount_pct + '%' : ''}</td>
@@ -70,6 +70,9 @@ function openReceiptWindow(data: ReceiptData) {
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
 <title>Receipt ${data.invoice_no}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Courier New',monospace;font-size:12px;padding:8mm}
@@ -84,6 +87,7 @@ td{padding:2px 3px;vertical-align:top}
 .bold{font-weight:bold}
 .due{color:#D33A4F;font-weight:bold}
 .ft{text-align:center;margin-top:8px;font-size:10px;color:#555}
+.ur{font-family:'Noto Nastaliq Urdu','Jameel Noori Nastaleeq',serif;direction:rtl;unicode-bidi:plaintext;line-height:2.1;font-size:13px}
 </style></head><body>
 <h1>Costmatic</h1>
 <div class="sub">Wholesale Beauty &amp; Cosmetics</div>
@@ -109,7 +113,17 @@ ${data.customer_name ? `<div>Customer: <strong>${data.customer_name}</strong></d
     w.document.write(html)
     w.document.close()
     w.focus()
-    setTimeout(() => { w.print() }, 400)
+    // Wait for the Nastaliq web font so the Urdu names render correctly on the
+    // first print; fall back to a fixed delay if the Font Loading API is absent
+    // or never resolves (e.g. offline). Print exactly once.
+    let printed = false
+    const doPrint = () => { if (!printed) { printed = true; w.print() } }
+    if (w.document.fonts?.ready) {
+      w.document.fonts.ready.then(() => setTimeout(doPrint, 150))
+      setTimeout(doPrint, 1500) // safety net
+    } else {
+      setTimeout(doPrint, 600)
+    }
   }
 }
 
@@ -309,7 +323,8 @@ export default function SalesPage() {
       date: today,
       customer_name: customer?.name ?? null,
       items: cart.map(l => ({
-        product_name: l.product.name_en,
+        // Receipt prints the Urdu product name (falls back to English if missing)
+        product_name: l.product.name_ur || l.product.name_en,
         unit_name: l.unit.unit_name,
         quantity: l.quantity,
         unit_price: l.unit_price,

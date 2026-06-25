@@ -18,12 +18,12 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { path: '/dashboard',  icon: LayoutDashboard, labelKey: 'nav.dashboard' },
-  { path: '/products',   icon: Package,         labelKey: 'nav.products',  adminOnly: true },
   { path: '/sales',      icon: ShoppingCart,    labelKey: 'nav.sales' },
-  { path: '/customers',  icon: Users,           labelKey: 'nav.customers' },
+  { path: '/products',   icon: Package,         labelKey: 'nav.products',  adminOnly: true },
+  { path: '/customers',  icon: Users,           labelKey: 'nav.customers', adminOnly: true },
   { path: '/suppliers',  icon: Truck,           labelKey: 'nav.suppliers', adminOnly: true },
   { path: '/purchases',  icon: ClipboardList,   labelKey: 'nav.purchases', adminOnly: true },
-  { path: '/reports',    icon: BarChart3,       labelKey: 'nav.reports' },
+  { path: '/reports',    icon: BarChart3,       labelKey: 'nav.reports',   adminOnly: true },
   { path: '/settings',   icon: Settings,        labelKey: 'nav.settings',  adminOnly: true },
   { path: '/users',      icon: UserCog,         labelKey: 'nav.users',     adminOnly: true },
 ]

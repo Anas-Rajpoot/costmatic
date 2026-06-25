@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
-import { X, Plus, Trash2 } from 'lucide-react'
-import { useSaveProduct, type UnitInput } from '../hooks/useProducts'
+import { X, Plus, Trash2, ScanLine } from 'lucide-react'
+import { useSaveProduct, useProducts, type UnitInput } from '../hooks/useProducts'
 import { useCategories } from '../hooks/useCategories'
 import { useAuth } from '@/features/auth/AuthContext'
+import CameraScanner from '@/features/sales/components/CameraScanner'
 import type { Product } from '@/types'
 import { cn } from '@/lib/utils'
 
@@ -107,6 +108,7 @@ export default function ProductDrawer({ product, onClose }: Props) {
   const { profile } = useAuth()
   const isAdmin = profile?.role === 'admin'
   const { data: categories = [] } = useCategories()
+  const { data: products = [] } = useProducts()
   const save = useSaveProduct()
 
   const isEdit = !!product
@@ -119,6 +121,13 @@ export default function ProductDrawer({ product, onClose }: Props) {
   const [newUnit, setNewUnit] = useState({ unit_name: 'dozen', factor: '12', wholesale_price: '0', retail_price: '0', custom: '' })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitErr, setSubmitErr] = useState('')
+  const [showScanner, setShowScanner] = useState(false)
+
+  // Warn if the entered/scanned barcode is already on another product
+  const trimmedBarcode = form.barcode.trim()
+  const barcodeDup = trimmedBarcode
+    ? (products.find(p => p.barcode === trimmedBarcode && p.id !== product?.id)?.name_en ?? '')
+    : ''
 
   useEffect(() => {
     if (product) {
@@ -298,11 +307,27 @@ export default function ProductDrawer({ product, onClose }: Props) {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm text-ink-muted mb-1.5">{t('products.barcode')}</label>
-                  <input
-                    value={form.barcode}
-                    onChange={e => setField('barcode', e.target.value)}
-                    className="w-full h-10 rounded-input border border-line bg-surface px-3 text-sm text-ink font-mono focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand transition-colors"
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      value={form.barcode}
+                      onChange={e => setField('barcode', e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }}
+                      className="flex-1 min-w-0 h-10 rounded-input border border-line bg-surface px-3 text-sm text-ink font-mono focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowScanner(true)}
+                      title={t('products.scan')}
+                      className="h-10 px-3 rounded-input border border-line text-ink-muted hover:text-brand hover:border-brand transition-colors flex items-center gap-1.5 text-sm shrink-0"
+                    >
+                      <ScanLine size={16} />
+                      <span className="hidden sm:inline">{t('products.scan')}</span>
+                    </button>
+                  </div>
+                  {barcodeDup && (
+                    <p className="text-due text-xs mt-1">{t('products.barcodeExists')} ({barcodeDup})</p>
+                  )}
+                  <p className="text-xs text-ink-muted mt-1">{t('products.scanHint')}</p>
                 </div>
                 <div className="flex flex-col gap-2 pt-6">
                   <label className="flex items-center gap-2.5 cursor-pointer select-none">
@@ -569,6 +594,13 @@ export default function ProductDrawer({ product, onClose }: Props) {
           </button>
         </div>
       </motion.div>
+
+      {showScanner && (
+        <CameraScanner
+          onScan={code => setField('barcode', code)}
+          onClose={() => setShowScanner(false)}
+        />
+      )}
     </>
   )
 }
