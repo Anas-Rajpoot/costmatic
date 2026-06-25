@@ -349,14 +349,19 @@ export default function SalesPage() {
     refocusBarcode()
   }
 
-  // ── Search suggestions ──
-  const suggestions = searchQuery.trim().length > 1
+  // ── Search suggestions (live filter from the first character) ──
+  const suggestions = searchQuery.trim().length > 0
     ? products
-        .filter(p => p.is_active && (
-          p.name_en.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (p.name_ur && p.name_ur.includes(searchQuery))
-        ))
-        .slice(0, 8)
+        .filter(p => {
+          const q = searchQuery.toLowerCase()
+          return p.is_active && (
+            p.name_en.toLowerCase().includes(q) ||
+            (p.name_ur && p.name_ur.includes(searchQuery)) ||
+            (p.brand && p.brand.toLowerCase().includes(q)) ||
+            (p.barcode && p.barcode.includes(searchQuery))
+          )
+        })
+        .slice(0, 10)
     : []
 
   const filteredCustomers = customerSearch
@@ -380,12 +385,12 @@ export default function SalesPage() {
               onChange={e => {
                 setBarcodeInput(e.target.value)
                 setSearchQuery(e.target.value)
-                setShowSuggestions(e.target.value.trim().length > 1)
+                setShowSuggestions(e.target.value.trim().length > 0)
                 setScanError('')
               }}
               onKeyDown={handleBarcodeKey}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-              onFocus={() => setShowSuggestions(barcodeInput.trim().length > 1)}
+              onFocus={() => setShowSuggestions(barcodeInput.trim().length > 0)}
               placeholder={t('pos.barcodePlaceholder')}
               className="w-full h-10 rounded-input border border-line bg-surface px-3 text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
             />
