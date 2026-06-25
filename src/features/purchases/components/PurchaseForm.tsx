@@ -63,9 +63,10 @@ export default function PurchaseForm({ onClose }: Props) {
     const units = p?.units ?? []
     const pieceUnit = units.find(u => u.unit_name === 'piece')
     const defaultUnit = units[0]?.unit_name ?? 'piece'
+    const lastCost = Number(p?.product_costs?.[0]?.cost_price) || 0
     const defaultCost = pieceUnit
-      ? Number(pieceUnit.wholesale_price) || Number(p?.cost_price) || 0
-      : Number(p?.cost_price) || 0
+      ? Number(pieceUnit.wholesale_price) || lastCost
+      : lastCost
     setLine(key, {
       product_id: pid,
       product: p,
@@ -79,7 +80,7 @@ export default function PurchaseForm({ onClose }: Props) {
     const line = lines.find(l => l._key === key)
     if (!line) return
     const unit = line.available_units.find(u => u.unit_name === unit_name)
-    const cost = unit ? Number(unit.wholesale_price) || Number(line.product?.cost_price) || 0 : 0
+    const cost = unit ? Number(unit.wholesale_price) || Number(line.product?.product_costs?.[0]?.cost_price) || 0 : 0
     setLine(key, { unit_name, unit_cost: String(cost) })
   }
 

@@ -12,7 +12,8 @@ export function useProducts() {
           *,
           category:categories(id, name_en, name_ur),
           units:product_units(*),
-          stock(quantity_in_base_unit, updated_at)
+          stock(quantity_in_base_unit, updated_at),
+          product_costs(cost_price)
         `)
         .order('name_en')
       if (error) throw error
@@ -24,16 +25,20 @@ export function useProducts() {
 export type UnitInput = Omit<ProductUnit, 'id' | 'product_id' | 'created_at'>
 
 export interface SaveProductInput {
-  product: Omit<Product, 'id' | 'created_at' | 'category' | 'units' | 'stock'> & { id?: string }
+  product: Omit<Product, 'id' | 'created_at' | 'category' | 'units' | 'stock' | 'product_costs'> & { id?: string }
   units: UnitInput[]
   opening_stock?: number
+  // Admin-only; written to the separate product_costs table. Leave undefined
+  // for employees so the cost is never touched.
+  cost_price?: number
 }
 
 export function useSaveProduct() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async ({ product, units, opening_stock }: SaveProductInput) => {
+    mutationFn: async ({ product, units, opening_stock, cost_price }: SaveProductInput) => {
       const { id, ...fields } = product
+      let pid = id
 
       if (id) {
         const { error: pe } = await supabase.from('products').update(fields).eq('id', id)
@@ -53,7 +58,7 @@ export function useSaveProduct() {
           .select('id')
           .single()
         if (pe) throw pe
-        const pid = pd.id as string
+        pid = pd.id as string
         if (units.length > 0) {
           const { error: iu } = await supabase
             .from('product_units')
@@ -69,6 +74,16 @@ export function useSaveProduct() {
         })
         if (se) throw se
       }
+
+      // Cost price lives in the admin-only product_costs table (RLS-guarded).
+      if (cost_price !== undefined && pid) {
+        const { error: ce } = await supabase
+          .from('product_costs')
+          .upsert({ product_id: pid, cost_price, updated_at: new Date().toISOString() })
+        if (ce) throw ce
+      }
+
+      return pid as string
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
   })

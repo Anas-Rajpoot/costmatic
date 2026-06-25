@@ -65,7 +65,7 @@ function productToForm(p: Product): FormState {
     category_id: p.category_id ?? '',
     brand: p.brand ?? '',
     barcode: p.barcode ?? '',
-    cost_price: String(p.cost_price),
+    cost_price: String(p.product_costs?.[0]?.cost_price ?? 0),
     min_stock_level: String(p.min_stock_level),
     opening_stock: '0',
     has_expiry: p.has_expiry,
@@ -189,13 +189,14 @@ export default function ProductDrawer({ product, onClose }: Props) {
           barcode: form.barcode.trim() || null,
           image_url: null,
           base_unit: 'piece',
-          cost_price: parseFloat(form.cost_price) || 0,
           min_stock_level: parseInt(form.min_stock_level) || 0,
           has_expiry: form.has_expiry,
           is_active: form.is_active,
         },
         units: unitPayload,
         opening_stock: isEdit ? undefined : parseInt(form.opening_stock) || 0,
+        // Only admins may write cost; employees never send it.
+        cost_price: isAdmin ? parseFloat(form.cost_price) || 0 : undefined,
       })
       onClose()
     } catch (err: unknown) {

@@ -180,7 +180,7 @@ export default function ProductsPage() {
                     {/* Cost price (admin only) */}
                     {isAdmin && (
                       <td className="px-4 py-3 text-ink tabular">
-                        {formatPKR(Number(p.cost_price))}
+                        {formatPKR(Number(p.product_costs?.[0]?.cost_price ?? 0))}
                       </td>
                     )}
 

@@ -72,6 +72,19 @@ Two roles: `admin` and `employee`. The permission matrix is in spec Section 4. K
 - Cannot write to products, purchases, suppliers, settings, or users
 - Discount is capped at their `discount_limit`
 
+**How these are actually enforced (see migration `0002_security_hardening.sql`):**
+- `cost_price` does NOT live on `products` — Postgres RLS can't hide a single column
+  when admin and employee share the `authenticated` role. It lives in a separate
+  **`product_costs`** table with an admin-only RLS policy. Read it via the
+  `product_costs(cost_price)` embed (empty array for employees); write it through the
+  admin path in `useSaveProduct`. Do not add a `cost_price` column back to `products`.
+- The discount cap and ALL sale money are recomputed server-side inside `create_sale`
+  from the catalog + the caller's `discount_limit`; client-supplied totals/prices are
+  ignored. `created_by` on every RPC is taken from `auth.uid()`, never the client arg.
+- `profit` and supplier payables are gated to admins inside the RPCs, not just the UI.
+- Tables written by the transactional RPCs (`sales`, `sale_items`, `customer_ledger`)
+  have NO open INSERT policy — writes go only through the SECURITY DEFINER RPCs.
+
 ## Build phases
 
 Build in order and test each phase before starting the next (spec Section 11):

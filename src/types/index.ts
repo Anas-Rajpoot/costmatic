@@ -151,7 +151,6 @@ export interface Product {
   barcode: string | null
   image_url: string | null
   base_unit: string
-  cost_price: number
   min_stock_level: number
   has_expiry: boolean
   is_active: boolean
@@ -160,4 +159,7 @@ export interface Product {
   category?: Pick<Category, 'id' | 'name_en' | 'name_ur'> | null
   units?: ProductUnit[]
   stock?: Stock[] // PostgREST returns as array; use stock[0]
+  // cost_price lives in the admin-only product_costs table; this embed is
+  // empty for employees (RLS) and holds one row for admins.
+  product_costs?: { cost_price: number }[]
 }
