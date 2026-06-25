@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Camera, Trash2, Plus, Minus, ChevronDown, CheckCircle2, User, X } from 'lucide-react'
+import { Camera, Trash2, Plus, Minus, ChevronDown, CheckCircle2, User, X, Printer } from 'lucide-react'
 import { useProducts } from '@/features/products/hooks/useProducts'
 import { useCustomers, useCreateCustomer } from './hooks/useCustomers'
-import { useCreateSale } from './hooks/useSales'
+import { useCreateSale, useRecentSales, type RecentSale } from './hooks/useSales'
 import { useAuth } from '@/features/auth/AuthContext'
 import { formatPKR } from '@/lib/format'
 import type { Product, ProductUnit, Customer } from '@/types'
@@ -133,6 +133,7 @@ export default function SalesPage() {
 
   const { data: products = [] } = useProducts()
   const { data: customers = [] } = useCustomers()
+  const { data: recentSales = [] } = useRecentSales(10)
   const createCustomer = useCreateCustomer()
   const createSale = useCreateSale()
 
@@ -349,6 +350,27 @@ export default function SalesPage() {
     refocusBarcode()
   }
 
+  // Re-print the receipt of a previous sale (e.g. if printing was missed)
+  function reprintSale(sale: RecentSale) {
+    openReceiptWindow({
+      invoice_no: sale.invoice_no,
+      date: sale.date,
+      customer_name: sale.customer?.name ?? null,
+      items: sale.items.map(i => ({
+        product_name: i.product?.name_ur || i.product?.name_en || '',
+        unit_name: i.unit_name,
+        quantity: i.quantity,
+        unit_price: i.unit_price,
+        discount_pct: i.discount_pct,
+        line_total: i.line_total,
+      })),
+      subtotal: sale.subtotal,
+      total: sale.total,
+      paid: sale.paid,
+      due: sale.due,
+    })
+  }
+
   // ── Search suggestions (live filter from the first character) ──
   const suggestions = searchQuery.trim().length > 0
     ? products
@@ -449,10 +471,52 @@ export default function SalesPage() {
         {/* Cart table */}
         <div className="flex-1 min-h-[200px] lg:min-h-0 overflow-y-auto rounded-card border border-line bg-surface">
           {cart.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-ink-muted gap-2">
-              <div className="text-4xl opacity-30">🛒</div>
-              <p className="text-sm">{t('pos.emptyCart')}</p>
-            </div>
+            recentSales.length > 0 ? (
+              <div className="p-3">
+                <div className="text-xs font-semibold text-ink-muted uppercase tracking-wide mb-2 px-1">
+                  {t('pos.recentSales')}
+                </div>
+                <ul className="space-y-1.5">
+                  {recentSales.map(s => (
+                    <li
+                      key={s.id}
+                      className="flex items-center justify-between gap-3 rounded-card border border-line px-3 py-2 hover:bg-page/50 transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-medium text-ink text-sm truncate">{s.invoice_no}</div>
+                        <div className="text-xs text-ink-muted truncate">
+                          {s.customer?.name ?? t('pos.walkIn')}
+                          {' · '}
+                          {new Date(s.created_at).toLocaleString('en-PK', {
+                            day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                          })}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="text-end">
+                          <div className="tabular-nums font-semibold text-ink text-sm">{formatPKR(s.total)}</div>
+                          {s.due > 0 && (
+                            <div className="text-xs text-due tabular-nums">{t('pos.due')} {formatPKR(s.due)}</div>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => reprintSale(s)}
+                          className="h-8 px-3 rounded-btn border border-line text-ink-muted text-xs font-medium hover:border-brand hover:text-brand transition-colors flex items-center gap-1.5"
+                        >
+                          <Printer size={13} />
+                          {t('pos.reprint')}
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-ink-muted gap-2">
+                <div className="text-4xl opacity-30">🛒</div>
+                <p className="text-sm">{t('pos.emptyCart')}</p>
+              </div>
+            )
           ) : (
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-surface border-b border-line z-10">

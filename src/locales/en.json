@@ -117,6 +117,8 @@
     "completeSale": "Complete Sale",
     "completing": "Processing…",
     "emptyCart": "Scan a product or type its name to start billing",
+    "recentSales": "Recent Sales",
+    "reprint": "Print",
     "productNotFound": "No product found for this barcode",
     "insufficientStock": "Insufficient stock",
     "udhaarNeedsCustomer": "Select a customer for Udhaar",
