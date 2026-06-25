@@ -1,11 +1,29 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { UserCog, Info, Plus, X } from 'lucide-react'
-import { createClient } from '@supabase/supabase-js'
+import { UserCog, Info, Plus, X, Trash2, Power } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/features/auth/AuthContext'
 import type { Profile, Role } from '@/types'
 import { cn } from '@/lib/utils'
+
+// Calls the admin-users edge function (service role, admin-verified server-side).
+async function invokeAdmin(body: Record<string, unknown>) {
+  const { data, error } = await supabase.functions.invoke('admin-users', { body })
+  if (error) {
+    let msg = error.message
+    try {
+      const ctx = (error as { context?: Response }).context
+      if (ctx && typeof ctx.json === 'function') {
+        const j = await ctx.json()
+        if (j?.error) msg = j.error
+      }
+    } catch { /* ignore parse errors */ }
+    throw new Error(msg)
+  }
+  if (data && (data as { error?: string }).error) throw new Error((data as { error: string }).error)
+  return data
+}
 
 async function fetchUsers(): Promise<Profile[]> {
   const { data, error } = await supabase
@@ -36,32 +54,16 @@ interface NewEmployee {
 }
 
 async function createEmployee(input: NewEmployee) {
-  const url = import.meta.env.VITE_SUPABASE_URL as string
-  const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string
-  // A throwaway client with no session persistence, so signing the new user up
-  // does NOT replace the admin's logged-in session in this browser.
-  const tmp = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
-  const { data, error } = await tmp.auth.signUp({
+  // Server-side via the admin-users edge function: creates a CONFIRMED account
+  // (no email verification needed) and applies the role/discount.
+  await invokeAdmin({
+    action: 'create',
     email: input.email,
     password: input.password,
-    options: { data: { full_name: input.full_name } },
+    full_name: input.full_name,
+    role: input.role,
+    discount_limit: input.discount_limit,
   })
-  if (error) throw error
-  const newId = data.user?.id
-  if (!newId) throw new Error('Sign-up did not return a user id')
-  // The handle_new_user trigger already inserted the profile row (role = employee).
-  // Apply the chosen role / discount / name as the admin (RLS allows admin updates).
-  const { error: ue } = await supabase
-    .from('users')
-    .update({
-      full_name: input.full_name,
-      role: input.role,
-      discount_limit: input.role === 'admin' ? 0 : input.discount_limit,
-    })
-    .eq('id', newId)
-  if (ue) throw ue
 }
 
 const BLANK_EMPLOYEE: NewEmployee = {
@@ -75,6 +77,7 @@ const BLANK_EMPLOYEE: NewEmployee = {
 export default function UsersPage() {
   const { t } = useTranslation()
   const qc = useQueryClient()
+  const { profile: currentUser } = useAuth()
   const [editId, setEditId] = useState<string | null>(null)
   const [editValues, setEditValues] = useState<{
     role: Role
@@ -125,6 +128,19 @@ export default function UsersPage() {
     })
   }
 
+  const [confirmDelId, setConfirmDelId] = useState<string | null>(null)
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => invokeAdmin({ action: 'delete', id }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users'] })
+      setConfirmDelId(null)
+    },
+  })
+
+  function toggleActive(u: Profile) {
+    mutation.mutate({ id: u.id, is_active: !u.is_active })
+  }
+
   function startEdit(user: Profile) {
     setEditId(user.id)
     setEditValues({
@@ -166,6 +182,12 @@ export default function UsersPage() {
         <Info size={15} className="shrink-0 mt-0.5" />
         <span>{t('users.createNote')}</span>
       </div>
+
+      {deleteMut.isError && (
+        <div className="mb-6 px-4 py-3 rounded-card bg-due-soft border border-due/20 text-due text-sm">
+          {(deleteMut.error as Error).message}
+        </div>
+      )}
 
       <div className="bg-surface rounded-card border border-line overflow-hidden">
         {isLoading ? (
@@ -273,13 +295,54 @@ export default function UsersPage() {
                               {t('common.cancel')}
                             </button>
                           </>
+                        ) : confirmDelId === user.id ? (
+                          <>
+                            <button
+                              onClick={() => deleteMut.mutate(user.id)}
+                              disabled={deleteMut.isPending}
+                              className="h-7 px-3 bg-due text-white rounded-btn text-xs font-medium hover:bg-due/80 disabled:opacity-60 transition-colors"
+                            >
+                              {t('common.confirm')}
+                            </button>
+                            <button
+                              onClick={() => setConfirmDelId(null)}
+                              className="h-7 px-3 border border-line text-ink-muted rounded-btn text-xs hover:border-brand hover:text-brand transition-colors"
+                            >
+                              {t('common.cancel')}
+                            </button>
+                          </>
                         ) : (
-                          <button
-                            onClick={() => startEdit(user)}
-                            className="h-7 px-3 border border-line text-ink-muted rounded-btn text-xs font-medium hover:border-brand hover:text-brand transition-colors"
-                          >
-                            {t('common.edit')}
-                          </button>
+                          <>
+                            <button
+                              onClick={() => startEdit(user)}
+                              className="h-7 px-3 border border-line text-ink-muted rounded-btn text-xs font-medium hover:border-brand hover:text-brand transition-colors"
+                            >
+                              {t('common.edit')}
+                            </button>
+                            {currentUser?.id !== user.id && (
+                              <>
+                                <button
+                                  onClick={() => toggleActive(user)}
+                                  title={user.is_active ? t('users.deactivate') : t('users.activate')}
+                                  className={cn(
+                                    'p-1.5 rounded transition-colors',
+                                    user.is_active
+                                      ? 'text-ink-muted hover:text-low hover:bg-low/10'
+                                      : 'text-cash hover:bg-cash-soft'
+                                  )}
+                                >
+                                  <Power size={14} />
+                                </button>
+                                <button
+                                  onClick={() => setConfirmDelId(user.id)}
+                                  title={t('common.delete')}
+                                  className="p-1.5 text-ink-muted hover:text-due hover:bg-due-soft rounded transition-colors"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </>
+                            )}
+                          </>
                         )}
                       </div>
                     </td>

@@ -322,6 +322,9 @@
     "create": "Create Account",
     "creating": "Creating…",
     "createError": "Could not create the account",
-    "emailConfirmNote": "They can sign in immediately (ensure email confirmation is disabled in Supabase Auth settings)."
+    "emailConfirmNote": "They can sign in immediately with this email and password.",
+    "deactivate": "Deactivate",
+    "activate": "Activate",
+    "deleteConfirm": "Delete this user permanently?"
   }
 }
