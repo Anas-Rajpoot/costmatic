@@ -171,7 +171,7 @@ export default function ReportsPage() {
       )}
 
       {/* Tabs + table */}
-      <div className="rounded-card border border-line bg-surface overflow-hidden">
+      <div className="rounded-card border border-line bg-surface overflow-x-auto">
         <div className="flex items-center border-b border-line overflow-x-auto">
           {TABS.map(tab => (
             <button

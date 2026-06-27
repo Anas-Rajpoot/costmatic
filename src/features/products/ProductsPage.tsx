@@ -110,7 +110,7 @@ export default function ProductsPage() {
       </div>
 
       {/* Products table */}
-      <div className="bg-surface rounded-card border border-line overflow-hidden">
+      <div className="bg-surface rounded-card border border-line overflow-x-auto">
         {isLoading ? (
           <div className="p-10 flex justify-center">
             <div className="w-6 h-6 rounded-full border-2 border-brand border-t-transparent animate-spin" />
@@ -121,7 +121,7 @@ export default function ProductsPage() {
             <p className="text-ink-muted text-sm">{t('products.noProducts')}</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="border-b border-line bg-page">
                 <th className="text-start px-4 py-3 text-ink-muted font-medium">{t('products.nameEn')}</th>

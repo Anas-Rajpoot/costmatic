@@ -26,18 +26,18 @@ function StatCard({ title, value, sub, icon: Icon, color = 'default', loading }:
   const c = colorMap[color]
 
   return (
-    <div className="rounded-card border border-line bg-surface p-3 md:p-4 flex items-start gap-2 md:gap-3">
-      <div className={cn('w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center shrink-0', c.bg)}>
-        <Icon size={16} className={c.icon} />
+    <div className="rounded-card border border-line bg-surface p-2.5 md:p-4 flex items-start gap-2 md:gap-3">
+      <div className={cn('w-7 h-7 md:w-10 md:h-10 rounded-full flex items-center justify-center shrink-0', c.bg)}>
+        <Icon size={15} className={c.icon} />
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-[10px] md:text-xs text-ink-muted font-medium uppercase tracking-wide leading-tight">{title}</p>
         {loading ? (
-          <div className="h-6 w-20 bg-line animate-pulse rounded mt-1" />
+          <div className="h-5 w-16 bg-line animate-pulse rounded mt-1" />
         ) : (
-          <p className={cn('text-lg md:text-2xl font-bold tabular-nums leading-tight mt-0.5', c.text)}>{value}</p>
+          <p className={cn('text-base md:text-2xl font-bold tabular-nums leading-tight mt-0.5 truncate', c.text)}>{value}</p>
         )}
-        {sub && <p className="text-[10px] md:text-xs text-ink-muted mt-0.5">{sub}</p>}
+        {sub && <p className="text-[10px] md:text-xs text-ink-muted mt-0.5 truncate">{sub}</p>}
       </div>
     </div>
   )
@@ -105,7 +105,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Receivables / Payables / Low Stock row */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 md:gap-3">
         <StatCard
           title={t('dashboard.totalReceivable')}
           value={formatPKR(stats?.total_receivable ?? 0)}

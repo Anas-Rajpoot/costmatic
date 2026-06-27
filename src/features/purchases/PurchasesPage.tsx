@@ -31,7 +31,7 @@ export default function PurchasesPage() {
         </button>
       </div>
 
-      <div className="bg-surface rounded-card border border-line overflow-hidden">
+      <div className="bg-surface rounded-card border border-line overflow-x-auto">
         {isLoading ? (
           <div className="p-10 flex justify-center">
             <div className="w-6 h-6 rounded-full border-2 border-brand border-t-transparent animate-spin" />

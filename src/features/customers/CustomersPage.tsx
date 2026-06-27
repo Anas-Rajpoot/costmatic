@@ -88,7 +88,7 @@ export default function CustomersPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-card border border-line bg-surface overflow-hidden">
+      <div className="rounded-card border border-line bg-surface overflow-x-auto">
         {isLoading ? (
           <div className="p-12 flex justify-center">
             <div className="w-8 h-8 rounded-full border-2 border-brand border-t-transparent animate-spin" />
