@@ -58,7 +58,7 @@ export default function ProductsPage() {
   return (
     <div>
       {/* Page header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-btn bg-brand-soft flex items-center justify-center">
             <Package size={18} className="text-brand" />

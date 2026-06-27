@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import Sidebar from './Sidebar'
@@ -6,6 +6,14 @@ import TopBar from './TopBar'
 import { useWindowWidth } from '@/hooks/useWindowWidth'
 
 const DESKTOP_BREAKPOINT = 1024
+
+function ContentLoader() {
+  return (
+    <div className="flex items-center justify-center min-h-[300px]">
+      <div className="w-8 h-8 rounded-full border-2 border-brand border-t-transparent animate-spin" />
+    </div>
+  )
+}
 
 export default function AppShell() {
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -48,7 +56,9 @@ export default function AppShell() {
           transition={{ duration: 0.2, ease: 'easeOut' }}
           className="flex-1 overflow-y-auto p-4 lg:p-6"
         >
-          <Outlet />
+          <Suspense fallback={<ContentLoader />}>
+            <Outlet />
+          </Suspense>
         </motion.main>
       </div>
     </div>
