@@ -20,7 +20,9 @@ export function useDashboardStats() {
       if (error) throw error
       return data as DashboardStats
     },
-    staleTime: 60_000,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
     refetchInterval: 120_000,
   })
 }
@@ -37,7 +39,9 @@ export function useTodayProfit() {
       if (error) throw error
       return Number(data ?? 0)
     },
-    staleTime: 60_000,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   })
 }
 
@@ -72,7 +76,9 @@ export function useRecentSales() {
         customer_name: (r.customer as unknown as { name: string } | null)?.name ?? null,
       })) as RecentSaleRow[]
     },
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
     refetchInterval: 60_000,
   })
 }
