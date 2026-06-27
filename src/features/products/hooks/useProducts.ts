@@ -19,6 +19,11 @@ export function useProducts() {
       if (error) throw error
       return data as Product[]
     },
+    // Stock can change from sales/purchases (even from another device), so always
+    // revalidate when a screen opens. Cached data still shows instantly + offline.
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   })
 }
 
