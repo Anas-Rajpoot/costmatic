@@ -22,6 +22,7 @@ export async function flushOfflineQueue(onDone?: () => void): Promise<{ synced: 
         p_created_by:   item.payload.created_by,
         p_items:        item.payload.items,
         p_client_id:    item.client_id,
+        p_sale_type:    item.payload.sale_type ?? 'retail',
       })
       if (error) throw error
       await removeFromQueue(item.client_id)

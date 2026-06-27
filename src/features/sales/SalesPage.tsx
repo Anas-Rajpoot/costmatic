@@ -7,6 +7,7 @@ import { useCustomers, useCreateCustomer } from './hooks/useCustomers'
 import { useCreateSale, useRecentSales, type RecentSale } from './hooks/useSales'
 import { useAuth } from '@/features/auth/AuthContext'
 import { formatPKR } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import type { Product, ProductUnit, Customer } from '@/types'
 import CameraScanner from './components/CameraScanner'
 
@@ -39,17 +40,19 @@ interface ReceiptData {
   due: number
 }
 
-function getListPrice(unit: ProductUnit, customer: Customer | null): number {
-  return customer?.customer_type === 'retail' ? unit.retail_price : unit.wholesale_price
+type SaleMode = 'retail' | 'wholesale'
+
+function getListPrice(unit: ProductUnit, mode: SaleMode): number {
+  return mode === 'retail' ? unit.retail_price : unit.wholesale_price
 }
 
 function computeLine(
   unit: ProductUnit,
   quantity: number,
   discount_pct: number,
-  customer: Customer | null,
+  mode: SaleMode,
 ): Pick<CartLine, 'list_price' | 'unit_price' | 'line_total'> {
-  const list_price = getListPrice(unit, customer)
+  const list_price = getListPrice(unit, mode)
   const unit_price = list_price * (1 - discount_pct / 100)
   return { list_price, unit_price, line_total: Math.round(unit_price * quantity * 100) / 100 }
 }
@@ -140,6 +143,7 @@ export default function SalesPage() {
   // ── Cart ──
   const [cart, setCart] = useState<CartLine[]>([])
   const [customer, setCustomer] = useState<Customer | null>(null)
+  const [saleMode, setSaleMode] = useState<SaleMode>('retail')
 
   // ── Barcode / search ──
   const [barcodeInput, setBarcodeInput] = useState('')
@@ -182,7 +186,7 @@ export default function SalesPage() {
   function addProduct(product: Product, unit?: ProductUnit) {
     if (!product.units?.length) return
     const u = unit ?? product.units.find(x => x.unit_name === 'piece') ?? product.units[0]
-    const computed = computeLine(u, 1, 0, customer)
+    const computed = computeLine(u, 1, 0, saleMode)
     setCart(prev => {
       const idx = prev.findIndex(l => l.product.id === product.id && l.unit.unit_name === u.unit_name)
       if (idx >= 0) {
@@ -237,7 +241,7 @@ export default function SalesPage() {
     setCart(prev =>
       prev.map(l => {
         if (l._key !== key) return l
-        const computed = computeLine(unit, l.quantity, l.discount_pct, customer)
+        const computed = computeLine(unit, l.quantity, l.discount_pct, saleMode)
         return { ...l, unit, ...computed }
       }),
     )
@@ -251,10 +255,29 @@ export default function SalesPage() {
     setCart(prev =>
       prev.map(l => {
         if (l._key !== key) return l
-        const computed = computeLine(l.unit, l.quantity, val, customer)
+        const computed = computeLine(l.unit, l.quantity, val, saleMode)
         return { ...l, discount_pct: val, ...computed }
       }),
     )
+  }
+
+  // Type an exact quantity (custom amounts) instead of only +/-
+  function setQtyAbs(key: number, raw: string) {
+    const qty = Math.max(1, Math.floor(parseFloat(raw) || 1))
+    setCart(prev =>
+      prev.map(l =>
+        l._key === key
+          ? { ...l, quantity: qty, line_total: Math.round(l.unit_price * qty * 100) / 100 }
+          : l,
+      ),
+    )
+  }
+
+  // Switch the whole counter between Retail and Wholesale pricing
+  function changeSaleMode(mode: SaleMode) {
+    setSaleMode(mode)
+    setCart(prev => prev.map(l => ({ ...l, ...computeLine(l.unit, l.quantity, l.discount_pct, mode) })))
+    refocusBarcode()
   }
 
   function removeItem(key: number) {
@@ -267,9 +290,11 @@ export default function SalesPage() {
     setCustomer(c)
     setShowCustomerDrop(false)
     setCustomerSearch('')
-    // Recalculate prices for new customer type
+    // Auto-match the price mode to the customer's type (shopkeeper can still override)
+    const mode: SaleMode = c ? (c.customer_type === 'retail' ? 'retail' : 'wholesale') : saleMode
+    setSaleMode(mode)
     setCart(prev =>
-      prev.map(l => ({ ...l, ...computeLine(l.unit, l.quantity, l.discount_pct, c) })),
+      prev.map(l => ({ ...l, ...computeLine(l.unit, l.quantity, l.discount_pct, mode) })),
     )
     refocusBarcode()
   }
@@ -308,6 +333,7 @@ export default function SalesPage() {
       paid: cashPaid,
       due,
       payment_type: paymentType,
+      sale_type: saleMode,
       created_by: session!.user.id,
       items: cart.map(l => ({
         product_id: l.product.id,
@@ -398,6 +424,24 @@ export default function SalesPage() {
 
       {/* ═══ Left Column: barcode + cart ═══ */}
       <div className="flex-1 flex flex-col min-w-0 p-3 lg:p-4 gap-3">
+        {/* Retail / Wholesale mode */}
+        <div className="grid grid-cols-2 gap-2">
+          {(['retail', 'wholesale'] as const).map(mode => (
+            <button
+              key={mode}
+              onClick={() => changeSaleMode(mode)}
+              className={cn(
+                'h-12 rounded-card font-bold text-base border-2 transition-all active:scale-[0.99]',
+                saleMode === mode
+                  ? 'bg-brand text-white border-brand shadow-sm'
+                  : 'bg-surface text-ink-muted border-line hover:border-brand hover:text-brand',
+              )}
+            >
+              {t(`pos.${mode}`)}
+            </button>
+          ))}
+        </div>
+
         {/* Barcode row */}
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -434,7 +478,7 @@ export default function SalesPage() {
                         <span className="font-medium truncate">{p.name_en}</span>
                         <span className="text-xs text-ink-muted shrink-0">
                           {p.units?.find(u => u.unit_name === 'piece')
-                            ? formatPKR(getListPrice(p.units.find(u => u.unit_name === 'piece')!, customer))
+                            ? formatPKR(getListPrice(p.units.find(u => u.unit_name === 'piece')!, saleMode))
                             : ''}
                         </span>
                       </button>
@@ -569,7 +613,13 @@ export default function SalesPage() {
                           >
                             <Minus size={11} />
                           </button>
-                          <span className="w-8 text-center font-semibold tabular-nums">{line.quantity}</span>
+                          <input
+                            type="number"
+                            min={1}
+                            value={line.quantity}
+                            onChange={e => setQtyAbs(line._key, e.target.value)}
+                            className="w-12 h-7 text-center font-semibold tabular-nums border border-line rounded bg-surface text-ink focus:outline-none focus:ring-1 focus:ring-brand"
+                          />
                           <button
                             onClick={() => changeQty(line._key, 1)}
                             className="w-6 h-6 rounded-full border border-line flex items-center justify-center hover:border-brand hover:text-brand transition-colors"

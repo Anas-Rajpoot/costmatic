@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Download } from 'lucide-react'
-import { useSalesByDay, useItemSales, usePeriodProfit } from './hooks/useReports'
+import { useSalesByDay, useItemSales, usePeriodProfit, useSalesSplit, type SaleTypeFilter } from './hooks/useReports'
 import { useCustomers } from '@/features/customers/hooks/useCustomers'
 import { useSuppliers } from '@/features/suppliers/hooks/useSuppliers'
 import { useProducts } from '@/features/products/hooks/useProducts'
@@ -34,13 +34,17 @@ export default function ReportsPage() {
   const [from, setFrom] = useState(monthStart())
   const [to, setTo] = useState(today())
   const [activeTab, setActiveTab] = useState<Tab>('sales')
+  const [saleType, setSaleType] = useState<'all' | 'retail' | 'wholesale'>('all')
+  const saleTypeParam: SaleTypeFilter = saleType === 'all' ? null : saleType
 
-  const salesQuery   = useSalesByDay(from, to)
-  const itemsQuery   = useItemSales(from, to)
-  const profitQuery  = usePeriodProfit(from, to)
+  const salesQuery   = useSalesByDay(from, to, saleTypeParam)
+  const itemsQuery   = useItemSales(from, to, saleTypeParam)
+  const profitQuery  = usePeriodProfit(from, to, saleTypeParam)
+  const splitQuery   = useSalesSplit(from, to)
   const { data: customers = [] } = useCustomers()
   const { data: suppliers = [] } = useSuppliers()
   const { data: products = [] } = useProducts()
+  const split = splitQuery.data
 
   const salesRows    = salesQuery.data ?? []
   const itemRows     = itemsQuery.data ?? []
@@ -101,7 +105,44 @@ export default function ReportsPage() {
         <div className="text-xs text-ink-muted ps-1 pb-1">
           {t('reports.period')}: {from} → {to}
         </div>
+
+        {/* Retail / Wholesale filter (defaults to All = combined) */}
+        <div className="flex items-center gap-2 ms-auto">
+          <span className="text-xs text-ink-muted">{t('reports.saleType')}</span>
+          <div className="inline-flex rounded-input border border-line overflow-hidden">
+            {(['all', 'retail', 'wholesale'] as const).map(m => (
+              <button
+                key={m}
+                onClick={() => setSaleType(m)}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-medium transition-colors',
+                  saleType === m ? 'bg-brand text-white' : 'bg-surface text-ink-muted hover:text-ink'
+                )}
+              >
+                {t(`reports.${m}`)}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
+
+      {/* Retail vs Wholesale split (always shows both, for the owner) */}
+      {activeTab === 'sales' && split && (split.retail_count > 0 || split.wholesale_count > 0) && (
+        <div className="grid grid-cols-2 gap-4">
+          <div className="rounded-card border border-line bg-surface p-3">
+            <p className="text-xs text-ink-muted mb-1">
+              {t('reports.retailSales')} · {split.retail_count}
+            </p>
+            <p className="text-xl font-bold text-ink tabular-nums">{formatPKR(split.retail_total)}</p>
+          </div>
+          <div className="rounded-card border border-line bg-surface p-3">
+            <p className="text-xs text-ink-muted mb-1">
+              {t('reports.wholesaleSales')} · {split.wholesale_count}
+            </p>
+            <p className="text-xl font-bold text-ink tabular-nums">{formatPKR(split.wholesale_total)}</p>
+          </div>
+        </div>
+      )}
 
       {/* Summary strip for sales tab */}
       {activeTab === 'sales' && salesRows.length > 0 && (

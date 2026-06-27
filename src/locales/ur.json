@@ -94,7 +94,13 @@
     "noData": "اس مدت میں کوئی ڈیٹا نہیں۔",
     "grandTotal": "مجموعی کل",
     "period": "مدت",
-    "exportCSV": "CSV ڈاؤن لوڈ"
+    "exportCSV": "CSV ڈاؤن لوڈ",
+    "saleType": "فروخت کی قسم",
+    "all": "سب",
+    "retail": "خوردہ",
+    "wholesale": "تھوک",
+    "retailSales": "خوردہ فروخت",
+    "wholesaleSales": "تھوک فروخت"
   },
   "pos": {
     "title": "فروخت / بلنگ",

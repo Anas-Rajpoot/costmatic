@@ -99,6 +99,9 @@ function productToUnits(p: Product): UnitRow[] {
 }
 
 const PRESET_UNITS = [
+  { label: '3-Pack', unit_name: '3-pack', factor: 3 },
+  { label: '6-Pack', unit_name: '6-pack', factor: 6 },
+  { label: '10-Pack', unit_name: '10-pack', factor: 10 },
   { label: 'Dozen', unit_name: 'dozen', factor: 12 },
   { label: 'Carton', unit_name: 'carton', factor: 144 },
 ]

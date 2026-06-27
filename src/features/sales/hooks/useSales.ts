@@ -67,6 +67,7 @@ export interface CreateSaleInput {
   paid: number
   due: number
   payment_type: 'cash' | 'udhaar' | 'mixed'
+  sale_type: 'retail' | 'wholesale'
   created_by: string
   items: SaleItemInput[]
 }
@@ -109,6 +110,7 @@ export function useCreateSale() {
         p_created_by:   input.created_by,
         p_items:        input.items,
         p_client_id:    clientId,
+        p_sale_type:    input.sale_type,
       })
       if (error) throw error
       return data as { sale_id: string; invoice_no: string }

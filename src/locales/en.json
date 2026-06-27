@@ -94,7 +94,13 @@
     "noData": "No data for the selected period.",
     "grandTotal": "Grand Total",
     "period": "Period",
-    "exportCSV": "Export CSV"
+    "exportCSV": "Export CSV",
+    "saleType": "Sale type",
+    "all": "All",
+    "retail": "Retail",
+    "wholesale": "Wholesale",
+    "retailSales": "Retail Sales",
+    "wholesaleSales": "Wholesale Sales"
   },
   "pos": {
     "title": "Sales / POS",
