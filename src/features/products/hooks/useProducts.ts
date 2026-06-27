@@ -17,7 +17,16 @@ export function useProducts() {
         `)
         .order('name_en')
       if (error) throw error
-      return data as Product[]
+      // PostgREST returns one-to-one embeds (stock, product_costs — their
+      // product_id is unique) as a single object, but the app reads them as
+      // arrays (stock[0], product_costs[0]). Normalize to arrays so stock
+      // quantities and cost prices read correctly everywhere.
+      return (data as unknown as Record<string, unknown>[]).map(p => ({
+        ...p,
+        stock: p.stock == null ? [] : Array.isArray(p.stock) ? p.stock : [p.stock],
+        product_costs:
+          p.product_costs == null ? [] : Array.isArray(p.product_costs) ? p.product_costs : [p.product_costs],
+      })) as unknown as Product[]
     },
     // Stock can change from sales/purchases (even from another device), so always
     // revalidate when a screen opens. Cached data still shows instantly + offline.
