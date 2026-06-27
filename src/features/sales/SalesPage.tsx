@@ -5,6 +5,7 @@ import { Camera, Trash2, Plus, Minus, ChevronDown, CheckCircle2, User, X, Printe
 import { useProducts } from '@/features/products/hooks/useProducts'
 import { useCustomers, useCreateCustomer } from './hooks/useCustomers'
 import { useCreateSale, useRecentSales, type RecentSale } from './hooks/useSales'
+import { useSettings } from '@/features/settings/hooks/useSettings'
 import { useAuth } from '@/features/auth/AuthContext'
 import { formatPKR } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -57,7 +58,14 @@ function computeLine(
   return { list_price, unit_price, line_total: Math.round(unit_price * quantity * 100) / 100 }
 }
 
-function openReceiptWindow(data: ReceiptData) {
+interface ShopInfo {
+  name: string
+  address: string
+  phone: string
+  footer: string
+}
+
+function openReceiptWindow(data: ReceiptData, shop: ShopInfo) {
   const rows = data.items
     .map(
       item => `
@@ -90,10 +98,11 @@ td{padding:2px 3px;vertical-align:top}
 .bold{font-weight:bold}
 .due{color:#D33A4F;font-weight:bold}
 .ft{text-align:center;margin-top:8px;font-size:10px;color:#555}
-.ur{font-family:'Noto Nastaliq Urdu','Jameel Noori Nastaleeq',serif;direction:rtl;unicode-bidi:plaintext;line-height:2.1;font-size:13px}
+.ur{font-family:'Noto Nastaliq Urdu','Jameel Noori Nastaleeq',serif;direction:rtl;unicode-bidi:plaintext;line-height:1.8;font-size:11px}
 </style></head><body>
-<h1>Costmatic</h1>
-<div class="sub">Wholesale Beauty &amp; Cosmetics</div>
+<h1>${shop.name}</h1>
+${shop.address ? `<div class="sub">${shop.address}</div>` : ''}
+${shop.phone ? `<div class="sub">Ph: ${shop.phone}</div>` : ''}
 <div class="div"></div>
 <div>Invoice: <strong>${data.invoice_no}</strong> &nbsp; Date: ${new Date(data.date).toLocaleDateString('en-PK')}</div>
 ${data.customer_name ? `<div>Customer: <strong>${data.customer_name}</strong></div>` : ''}
@@ -108,7 +117,7 @@ ${data.customer_name ? `<div>Customer: <strong>${data.customer_name}</strong></d
   ${data.due > 0 ? `<tr class="due"><td>Udhaar</td><td class="r">${formatPKR(data.due)}</td></tr>` : ''}
 </table>
 <div class="div"></div>
-<div class="ft">Thank you for your business!</div>
+<div class="ft">${shop.footer}</div>
 </body></html>`
 
   const w = window.open('', '_blank', 'width=420,height=620')
@@ -137,8 +146,17 @@ export default function SalesPage() {
   const { data: products = [] } = useProducts()
   const { data: customers = [] } = useCustomers()
   const { data: recentSales = [] } = useRecentSales(10)
+  const { data: settings = {} } = useSettings()
   const createCustomer = useCreateCustomer()
   const createSale = useCreateSale()
+
+  // Shop header/footer for printed receipts (from Settings)
+  const shop: ShopInfo = {
+    name: settings.shop_name || 'Costmatic',
+    address: settings.shop_address || '',
+    phone: settings.shop_phone || '',
+    footer: settings.receipt_footer || 'Thank you for your business!',
+  }
 
   // ── Cart ──
   const [cart, setCart] = useState<CartLine[]>([])
@@ -394,7 +412,7 @@ export default function SalesPage() {
       total: sale.total,
       paid: sale.paid,
       due: sale.due,
-    })
+    }, shop)
   }
 
   // ── Search suggestions (live filter from the first character) ──
@@ -943,7 +961,7 @@ export default function SalesPage() {
               )}
               <div className="flex gap-3">
                 <button
-                  onClick={() => openReceiptWindow(saleResult.data)}
+                  onClick={() => openReceiptWindow(saleResult.data, shop)}
                   className="flex-1 py-2.5 rounded-input border border-line text-ink text-sm font-medium hover:bg-page transition-colors"
                 >
                   {t('pos.printReceipt')}
