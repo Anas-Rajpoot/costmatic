@@ -17,6 +17,8 @@
     "signIn": "Sign in",
     "signingIn": "Signing in…",
     "signOut": "Sign out",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
     "invalidCredentials": "Invalid email or password",
     "accountInactive": "Your account has been deactivated. Contact your admin."
   },

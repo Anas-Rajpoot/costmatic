@@ -17,6 +17,8 @@
     "signIn": "داخل ہوں",
     "signingIn": "داخل ہو رہے ہیں…",
     "signOut": "لاگ آؤٹ",
+    "showPassword": "پاس ورڈ دکھائیں",
+    "hidePassword": "پاس ورڈ چھپائیں",
     "invalidCredentials": "غلط ای میل یا پاس ورڈ",
     "accountInactive": "آپ کا اکاؤنٹ غیر فعال ہے۔ اپنے ایڈمن سے رابطہ کریں۔"
   },

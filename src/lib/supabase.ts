@@ -12,4 +12,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(
   supabaseUrl ?? 'https://placeholder.supabase.co',
   supabaseAnonKey ?? 'placeholder',
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      // We never carry auth tokens in the URL (email/password flow only),
+      // so skip the URL scan — it's pure startup overhead otherwise.
+      detectSessionInUrl: false,
+      storageKey: 'costmatic.auth',
+    },
+  },
 )
