@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { Save, Printer, Clock, Store, SlidersHorizontal, CheckCircle, X } from 'lucide-react'
-import { toCanvas as bwipToCanvas } from 'bwip-js'
 import { useSettings, useSaveSettings, useAuditLog } from './hooks/useSettings'
 import { useProducts } from '@/features/products/hooks/useProducts'
 import { cn } from '@/lib/utils'
@@ -173,6 +172,9 @@ function BarcodeLabelPrinter() {
     if (!sheet.length) return
     setPrinting(true)
     try {
+      // bwip-js is ~900 kB — load it only when labels are actually printed,
+      // so opening Settings doesn't pull in the whole barcode library.
+      const { toCanvas: bwipToCanvas } = await import('bwip-js')
       const rendered: { name: string; img: string }[] = []
       for (const item of sheet) {
         const canvas = document.createElement('canvas')
