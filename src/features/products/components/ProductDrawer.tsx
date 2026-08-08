@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { X, Plus, Trash2, ScanLine } from 'lucide-react'
 import { useSaveProduct, useProducts, type UnitInput } from '../hooks/useProducts'
-import { useCategories } from '../hooks/useCategories'
+import { useCategories, categoryOptions } from '../hooks/useCategories'
 import { useAuth } from '@/features/auth/AuthContext'
 import CameraScanner from '@/features/sales/components/CameraScanner'
 import type { Product } from '@/types'
@@ -121,29 +121,44 @@ function productToUnits(p: Product): UnitRow[] {
 
 interface PresetUnit { label: string; unit_name: string; factor: number }
 
-// Standard bulk presets adapt to the base unit: cigarette (pack) → carton of 10,
-// beverage (bottle) → crate of 24, otherwise the usual piece-based packs.
+// Standard bulk presets adapt to the base unit: cigarette (pack) → outer/dandee,
+// beverage (bottle) → crate, eggs/biscuits (piece) → tray/roll/carton.
 function standardPresets(base_unit: string): PresetUnit[] {
-  if (base_unit === 'pack') return [{ label: 'Carton (10 packs)', unit_name: 'carton', factor: 10 }]
-  if (base_unit === 'bottle') return [{ label: 'Crate (24)', unit_name: 'crate', factor: 24 }]
+  if (base_unit === 'pack') return [
+    { label: 'Outer / Dandee (10)', unit_name: 'outer', factor: 10 },
+    { label: 'Carton (50)', unit_name: 'carton', factor: 50 },
+  ]
+  if (base_unit === 'bottle') return [
+    { label: 'Crate (24)', unit_name: 'crate', factor: 24 },
+    { label: 'Case (12)', unit_name: 'case', factor: 12 },
+  ]
   return [
-    { label: '3-Pack', unit_name: '3-pack', factor: 3 },
-    { label: '6-Pack', unit_name: '6-pack', factor: 6 },
-    { label: 'Dozen', unit_name: 'dozen', factor: 12 },
-    { label: 'Carton', unit_name: 'carton', factor: 144 },
+    { label: 'Dozen (12)', unit_name: 'dozen', factor: 12 },
+    { label: 'Tray (30)', unit_name: 'tray', factor: 30 },
+    { label: 'Outer (10)', unit_name: 'outer', factor: 10 },
+    { label: 'Roll (24)', unit_name: 'roll', factor: 24 },
+    { label: 'Carton (24)', unit_name: 'carton', factor: 24 },
   ]
 }
 
-// Loose packs are fractions/multiples of the base unit (kg or litre). Labels adapt
-// to weight vs volume; factor is the number of base units the pack contains.
+// Loose packs = fractions/multiples of the base unit. Weight (kg) covers scooped
+// portions up to wholesale bags; volume (litre) covers pouches up to a 16 L tin.
 function loosePresets(base_unit: string): PresetUnit[] {
-  const vol = base_unit === 'litre'
+  if (base_unit === 'litre') return [
+    { label: '250 ml', unit_name: '250ml', factor: 0.25 },
+    { label: '500 ml', unit_name: '500ml', factor: 0.5 },
+    { label: '2.5 L', unit_name: '2.5L', factor: 2.5 },
+    { label: '5 L', unit_name: '5L', factor: 5 },
+    { label: '16 L Tin', unit_name: '16L', factor: 16 },
+  ]
   return [
-    { label: vol ? '250 ml' : '250 g', unit_name: vol ? '250ml' : '250g', factor: 0.25 },
-    { label: vol ? '500 ml' : '500 g', unit_name: vol ? '500ml' : '500g', factor: 0.5 },
-    { label: vol ? '750 ml' : '750 g', unit_name: vol ? '750ml' : '750g', factor: 0.75 },
-    { label: vol ? '2 L' : '2 kg', unit_name: vol ? '2L' : '2kg', factor: 2 },
-    { label: vol ? '5 L' : '5 kg', unit_name: vol ? '5L' : '5kg', factor: 5 },
+    { label: '250 g', unit_name: '250g', factor: 0.25 },
+    { label: '500 g', unit_name: '500g', factor: 0.5 },
+    { label: '2 kg', unit_name: '2kg', factor: 2 },
+    { label: '5 kg', unit_name: '5kg', factor: 5 },
+    { label: '10 kg', unit_name: '10kg', factor: 10 },
+    { label: '25 kg', unit_name: '25kg', factor: 25 },
+    { label: '50 kg Bag', unit_name: '50kg', factor: 50 },
   ]
 }
 
@@ -408,8 +423,8 @@ export default function ProductDrawer({ product, onClose }: Props) {
                     className="w-full h-10 rounded-input border border-line bg-surface px-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand/30"
                   >
                     <option value="">—</option>
-                    {categories.map(c => (
-                      <option key={c.id} value={c.id}>{c.name_en}</option>
+                    {categoryOptions(categories).map(o => (
+                      <option key={o.id} value={o.id}>{o.depth ? `   — ${o.label}` : o.label}</option>
                     ))}
                   </select>
                 </div>

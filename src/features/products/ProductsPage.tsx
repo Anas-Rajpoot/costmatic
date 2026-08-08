@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { AnimatePresence } from 'framer-motion'
 import { Package, Plus, Settings2, Pencil, Trash2, Search } from 'lucide-react'
 import { useProducts, useDeleteProduct } from './hooks/useProducts'
-import { useCategories } from './hooks/useCategories'
+import { useCategories, categoryOptions } from './hooks/useCategories'
 import CategoryDialog from './components/CategoryDialog'
 import ProductDrawer from './components/ProductDrawer'
 import { formatPKR, formatQty, unitShort } from '@/lib/format'
@@ -102,10 +102,8 @@ export default function ProductsPage() {
           className="h-9 rounded-input border border-line bg-surface px-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand/30"
         >
           <option value="">{t('products.allCategories')}</option>
-          {categories.map(c => (
-            <option key={c.id} value={c.id}>
-              {isUrdu ? c.name_ur || c.name_en : c.name_en}
-            </option>
+          {categoryOptions(categories, isUrdu).map(o => (
+            <option key={o.id} value={o.id}>{o.depth ? `   — ${o.label}` : o.label}</option>
           ))}
         </select>
       </div>

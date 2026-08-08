@@ -18,6 +18,28 @@ export function useCategories() {
   })
 }
 
+export interface CategoryOption { id: string; label: string; depth: number }
+
+// Flatten categories into a parent→child ordered list for an indented <select>.
+// Parents (sort_order) first, each immediately followed by its children (sort_order).
+// `isUrdu` picks the display name; falls back to English.
+export function categoryOptions(categories: Category[], isUrdu = false): CategoryOption[] {
+  const name = (c: Category) => (isUrdu ? c.name_ur || c.name_en : c.name_en)
+  const bySort = (a: Category, b: Category) => a.sort_order - b.sort_order || name(a).localeCompare(name(b))
+  const parents = categories.filter(c => !c.parent_id).sort(bySort)
+  const out: CategoryOption[] = []
+  for (const p of parents) {
+    out.push({ id: p.id, label: name(p), depth: 0 })
+    for (const c of categories.filter(x => x.parent_id === p.id).sort(bySort)) {
+      out.push({ id: c.id, label: name(c), depth: 1 })
+    }
+  }
+  // Any orphans (parent missing) — append flat so they're never lost.
+  const seen = new Set(out.map(o => o.id))
+  for (const c of categories) if (!seen.has(c.id)) out.push({ id: c.id, label: name(c), depth: 0 })
+  return out
+}
+
 export function useUpsertCategory() {
   const qc = useQueryClient()
   return useMutation({
