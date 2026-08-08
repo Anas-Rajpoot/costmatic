@@ -28,6 +28,10 @@ export interface ProductUnit {
   wholesale_price: number
   retail_price: number
   barcode: string | null
+  // Which sale modes this unit may be sold in. Default both true; set false to
+  // enforce e.g. cigarette pack = retail-only, carton = wholesale-only (migration 0008).
+  retail_eligible: boolean
+  wholesale_eligible: boolean
   created_at: string
 }
 
@@ -151,6 +155,11 @@ export interface Product {
   barcode: string | null
   image_url: string | null
   base_unit: string
+  // 'standard' = counted goods (piece/packaged/beverage bottle+crate);
+  // 'loose' = weight/volume goods sold fractionally or by amount (kiryana).
+  product_kind: 'standard' | 'loose'
+  // Loose-only: minimum quantity (base units) enforced in WHOLESALE mode; null = none.
+  wholesale_min_qty: number | null
   min_stock_level: number
   has_expiry: boolean
   is_active: boolean

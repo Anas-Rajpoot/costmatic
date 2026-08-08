@@ -31,7 +31,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           maxAge: 1000 * 60 * 60 * 24 * 7,
           // Bump this when cached data shape/semantics change — it discards any
           // older persisted cache on load so users never get stuck on stale data.
-          buster: 'costmatic-2026-06-26',
+          buster: 'costmatic-2026-08-07',
         }}
       >
         <SyncProvider>

@@ -1,13 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Camera, Trash2, Plus, Minus, ChevronDown, CheckCircle2, User, X, Printer } from 'lucide-react'
+import { Camera, Trash2, Plus, Minus, ChevronDown, CheckCircle2, User, X, Printer, Keyboard } from 'lucide-react'
 import { useProducts } from '@/features/products/hooks/useProducts'
 import { useCustomers, useCreateCustomer } from './hooks/useCustomers'
 import { useCreateSale, useRecentSales, type RecentSale } from './hooks/useSales'
 import { useSettings } from '@/features/settings/hooks/useSettings'
 import { useAuth } from '@/features/auth/AuthContext'
-import { formatPKR } from '@/lib/format'
+import { get, set } from 'idb-keyval'
+import { formatPKR, formatQty, round2, unitShort } from '@/lib/format'
+import { computeLine, computeAmountLine, getListPrice, type SaleMode } from '@/lib/pricing'
+import { escapeHtml } from '@/lib/escapeHtml'
 import { cn } from '@/lib/utils'
 import type { Product, ProductUnit, Customer } from '@/types'
 import CameraScanner from './components/CameraScanner'
@@ -16,12 +19,98 @@ interface CartLine {
   _key: number
   product: Product
   unit: ProductUnit
-  quantity: number
+  // 'qty' = weight / pack / counted quantity; 'amount' = loose "Rs X worth"
+  input_mode: 'qty' | 'amount'
+  quantity: number // for loose weight this is fractional; for amount it's the preview weight
+  amount: number   // Rs, only used in amount mode
   discount_pct: number
   list_price: number
   unit_price: number
   line_total: number
 }
+
+function isLooseProduct(p: Product): boolean {
+  return p.product_kind === 'loose'
+}
+
+// The factor-1 base unit (kg / litre / piece / bottle) used for weight & amount modes.
+function baseUnitOf(p: Product): ProductUnit {
+  return p.units!.find(u => u.unit_name === p.base_unit) ?? p.units![0]
+}
+
+// Non-base units (packs like 250g / 5kg, or crate) sold as whole counts.
+function packUnitsOf(p: Product): ProductUnit[] {
+  return (p.units ?? []).filter(u => u.unit_name !== p.base_unit)
+}
+
+// Retail/wholesale eligibility (migration 0008). Undefined (old rows) → allowed.
+function unitEligible(u: ProductUnit, mode: SaleMode): boolean {
+  return mode === 'retail' ? (u.retail_eligible ?? true) : (u.wholesale_eligible ?? true)
+}
+function eligibleUnits(p: Product, mode: SaleMode): ProductUnit[] {
+  return (p.units ?? []).filter(u => unitEligible(u, mode))
+}
+// Default unit when adding/fixing a line for a mode: retail → the smallest (base if
+// eligible), wholesale → a bulk (non-base) eligible unit, else any eligible, else base.
+function defaultUnitFor(p: Product, mode: SaleMode): ProductUnit {
+  const base = baseUnitOf(p)
+  const elig = eligibleUnits(p, mode)
+  if (mode === 'retail') return unitEligible(base, 'retail') ? base : (elig[0] ?? base)
+  return elig.find(u => u.unit_name !== p.base_unit) ?? elig[0] ?? base
+}
+
+let _cartKeySeq = 1
+const nextCartKey = () => _cartKeySeq++
+// Keep the cart-line key counter ahead of any restored keys to avoid collisions
+// after a page reload (the counter resets to 1 but restored keys may be higher).
+const ensureCartKeyAbove = (n: number) => { if (_cartKeySeq <= n) _cartKeySeq = n + 1 }
+
+// One open/parked sale. Fully JSON-serialisable so the whole set can be persisted
+// to IndexedDB and survive an accidental refresh.
+interface SaleTab {
+  id: string
+  cart: CartLine[]
+  customer: Customer | null
+  saleMode: SaleMode
+  paymentType: 'cash' | 'udhaar' | 'mixed'
+  received: string
+}
+function freshTab(): SaleTab {
+  return { id: crypto.randomUUID(), cart: [], customer: null, saleMode: 'retail', paymentType: 'cash', received: '' }
+}
+const MAX_TABS = 6
+const PARKED_KEY = 'costmatic_parked_sales'
+
+// Small on-screen shortcut hint chip.
+function Kbd({ k, dark }: { k: string; dark?: boolean }) {
+  return (
+    <kbd className={cn(
+      'text-[10px] leading-none font-mono px-1 py-0.5 rounded border',
+      dark ? 'border-white/40 text-white/90' : 'border-line text-ink-muted bg-page',
+    )}>
+      {k}
+    </kbd>
+  )
+}
+
+// Rows for the F1 cheat sheet: [key combo, i18n action key].
+const SHORTCUTS: [string, string][] = [
+  ['F2', 'pos.sc_search'],
+  ['F3', 'pos.sc_customer'],
+  ['F4', 'pos.sc_received'],
+  ['F6', 'pos.sc_mode'],
+  ['F9 / Ctrl+Enter', 'pos.sc_complete'],
+  ['PgUp / PgDn', 'pos.sc_cycle'],
+  ['↑ / ↓', 'pos.sc_navline'],
+  ['+ / −', 'pos.sc_qty'],
+  ['Del', 'pos.sc_remove'],
+  ['*', 'pos.sc_exact'],
+  ['Alt+N / Alt+H', 'pos.sc_newtab'],
+  ['Alt+1…6', 'pos.sc_switchtab'],
+  ['Alt+C', 'pos.sc_new'],
+  ['Esc', 'pos.sc_close'],
+  ['F1', 'pos.sc_help'],
+]
 
 interface ReceiptData {
   invoice_no: string
@@ -39,24 +128,15 @@ interface ReceiptData {
   total: number
   paid: number
   due: number
+  tendered?: number
+  change?: number
+  // Khata (running account) — only for a named customer with a balance:
+  previous_balance?: number // owed before this sale
+  new_balance?: number      // owed after this sale (previous + this bill's udhaar)
 }
 
-type SaleMode = 'retail' | 'wholesale'
-
-function getListPrice(unit: ProductUnit, mode: SaleMode): number {
-  return mode === 'retail' ? unit.retail_price : unit.wholesale_price
-}
-
-function computeLine(
-  unit: ProductUnit,
-  quantity: number,
-  discount_pct: number,
-  mode: SaleMode,
-): Pick<CartLine, 'list_price' | 'unit_price' | 'line_total'> {
-  const list_price = getListPrice(unit, mode)
-  const unit_price = list_price * (1 - discount_pct / 100)
-  return { list_price, unit_price, line_total: Math.round(unit_price * quantity * 100) / 100 }
-}
+// Pricing/qty math (getListPrice, computeLine, computeAmountLine, SaleMode) lives in
+// @/lib/pricing; numeric helpers (round2, formatQty) in @/lib/format — both unit-tested.
 
 interface ShopInfo {
   name: string
@@ -70,10 +150,10 @@ function openReceiptWindow(data: ReceiptData, shop: ShopInfo) {
     .map(
       item => `
       <tr>
-        <td class="ur">${item.product_name}</td>
-        <td style="text-align:center">${item.quantity}&nbsp;${item.unit_name}</td>
+        <td class="ur">${escapeHtml(item.product_name)}</td>
+        <td style="text-align:center">${escapeHtml(formatQty(item.quantity))}&nbsp;${escapeHtml(item.unit_name)}</td>
         <td style="text-align:right">${formatPKR(item.unit_price)}</td>
-        <td style="text-align:center">${item.discount_pct > 0 ? item.discount_pct + '%' : ''}</td>
+        <td style="text-align:center">${item.discount_pct > 0 ? escapeHtml(item.discount_pct) + '%' : ''}</td>
         <td style="text-align:right">${formatPKR(item.line_total)}</td>
       </tr>`,
     )
@@ -100,12 +180,12 @@ td{padding:2px 3px;vertical-align:top}
 .ft{text-align:center;margin-top:8px;font-size:10px;color:#555}
 .ur{font-family:'Noto Nastaliq Urdu','Jameel Noori Nastaleeq',serif;direction:rtl;unicode-bidi:plaintext;line-height:1.8;font-size:11px}
 </style></head><body>
-<h1>${shop.name}</h1>
-${shop.address ? `<div class="sub">${shop.address}</div>` : ''}
-${shop.phone ? `<div class="sub">Ph: ${shop.phone}</div>` : ''}
+<h1>${escapeHtml(shop.name)}</h1>
+${shop.address ? `<div class="sub">${escapeHtml(shop.address)}</div>` : ''}
+${shop.phone ? `<div class="sub">Ph: ${escapeHtml(shop.phone)}</div>` : ''}
 <div class="div"></div>
-<div>Invoice: <strong>${data.invoice_no}</strong> &nbsp; Date: ${new Date(data.date).toLocaleDateString('en-PK')}</div>
-${data.customer_name ? `<div>Customer: <strong>${data.customer_name}</strong></div>` : ''}
+<div>Invoice: <strong>${escapeHtml(data.invoice_no)}</strong> &nbsp; Date: ${escapeHtml(new Date(data.date).toLocaleDateString('en-PK'))}</div>
+${data.customer_name ? `<div>Customer: <strong>${escapeHtml(data.customer_name)}</strong></div>` : ''}
 <div class="div"></div>
 <table><thead><tr>
   <th>Item</th><th class="c">Qty</th><th class="r">Rate</th><th class="c">Disc</th><th class="r">Amt</th>
@@ -113,11 +193,21 @@ ${data.customer_name ? `<div>Customer: <strong>${data.customer_name}</strong></d
 <div class="div"></div>
 <table class="tot">
   <tr class="bold"><td>TOTAL</td><td class="r">${formatPKR(data.total)}</td></tr>
-  <tr><td>Paid (Cash)</td><td class="r">${formatPKR(data.paid)}</td></tr>
-  ${data.due > 0 ? `<tr class="due"><td>Udhaar</td><td class="r">${formatPKR(data.due)}</td></tr>` : ''}
+  ${data.tendered != null ? `<tr><td>Received (Cash)</td><td class="r">${formatPKR(data.tendered)}</td></tr>` : ''}
+  ${data.change != null ? `<tr class="bold"><td>Change Returned</td><td class="r">${formatPKR(data.change)}</td></tr>` : ''}
+  <tr><td>Paid</td><td class="r">${formatPKR(data.paid)}</td></tr>
+  ${data.due > 0 ? `<tr class="due"><td>Udhaar (This Bill)</td><td class="r">${formatPKR(data.due)}</td></tr>` : ''}
 </table>
+${data.new_balance != null && ((data.previous_balance ?? 0) > 0 || data.due > 0) ? `
 <div class="div"></div>
-<div class="ft">${shop.footer}</div>
+<div style="font-size:10px;color:#555;margin-bottom:3px;font-weight:bold">Account (Khata)</div>
+<table class="tot">
+  <tr><td>Previous Balance</td><td class="r">${formatPKR(data.previous_balance ?? 0)}</td></tr>
+  ${data.due > 0 ? `<tr><td>+ This Bill Udhaar</td><td class="r">${formatPKR(data.due)}</td></tr>` : ''}
+  <tr class="bold due"><td>Total Balance Due</td><td class="r">${formatPKR(data.new_balance)}</td></tr>
+</table>` : ''}
+<div class="div"></div>
+<div class="ft">${escapeHtml(shop.footer)}</div>
 </body></html>`
 
   const w = window.open('', '_blank', 'width=420,height=620')
@@ -158,18 +248,43 @@ export default function SalesPage() {
     footer: settings.receipt_footer || 'Thank you for your business!',
   }
 
-  // ── Cart ──
-  const [cart, setCart] = useState<CartLine[]>([])
-  const [customer, setCustomer] = useState<Customer | null>(null)
-  const [saleMode, setSaleMode] = useState<SaleMode>('retail')
+  // ── Sale tabs (parked / parallel sales) ──
+  // A single source of truth: every open sale lives in `tabs`; the active tab's
+  // fields are exposed as `cart`/`customer`/… + shim setters so the rest of the
+  // component (and all its handlers) keep working unchanged.
+  const [tabs, setTabs] = useState<SaleTab[]>(() => [freshTab()])
+  const [activeId, setActiveId] = useState<string>('')
+  const [restored, setRestored] = useState(false)
+
+  const active = tabs.find(t => t.id === activeId) ?? tabs[0]
+  const cart = active.cart
+  const customer = active.customer
+  const saleMode = active.saleMode
+
+  function patchActive(patch: (t: SaleTab) => Partial<SaleTab>) {
+    setTabs(prev => prev.map(t => (t.id === active.id ? { ...t, ...patch(t) } : t)))
+  }
+  const setCart = (u: CartLine[] | ((prev: CartLine[]) => CartLine[])) =>
+    patchActive(t => ({ cart: typeof u === 'function' ? (u as (p: CartLine[]) => CartLine[])(t.cart) : u }))
+  const setCustomer = (c: Customer | null) => patchActive(() => ({ customer: c }))
+  const setSaleMode = (m: SaleMode) => patchActive(() => ({ saleMode: m }))
 
   // ── Barcode / search ──
   const [barcodeInput, setBarcodeInput] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [showSuggestions, setShowSuggestions] = useState(false)
   const barcodeRef = useRef<HTMLInputElement>(null)
+  const receivedRef = useRef<HTMLInputElement>(null)
+  const customerBtnRef = useRef<HTMLButtonElement>(null)
   const [scanError, setScanError] = useState('')
   const [showCamera, setShowCamera] = useState(false)
+
+  // ── Keyboard ──
+  const [selectedKey, setSelectedKey] = useState<number | null>(null) // highlighted cart line
+  const [showHelp, setShowHelp] = useState(false)                     // F1 cheat sheet
+
+  // Admin-only: bypass eligibility + loose wholesale-minimum for this sale.
+  const [allowOverride, setAllowOverride] = useState(false)
 
   // ── Customer UI ──
   const [customerSearch, setCustomerSearch] = useState('')
@@ -177,9 +292,12 @@ export default function SalesPage() {
   const [showNewCustomer, setShowNewCustomer] = useState(false)
   const [newCust, setNewCust] = useState<{ name: string; phone: string; customer_type: 'wholesale' | 'retail' }>({ name: '', phone: '', customer_type: 'wholesale' })
 
-  // ── Payment ──
-  const [paymentType, setPaymentType] = useState<'cash' | 'udhaar' | 'mixed'>('cash')
-  const [cashAmount, setCashAmount] = useState('')
+  // ── Payment (derived from the active tab) ──
+  const paymentType = active.paymentType
+  // Amount the customer handed over — drives change (cash) and the paid portion (mixed).
+  const received = active.received
+  const setPaymentType = (p: 'cash' | 'udhaar' | 'mixed') => patchActive(() => ({ paymentType: p }))
+  const setReceived = (r: string) => patchActive(() => ({ received: r }))
 
   // ── Sale result ──
   const [saleResult, setSaleResult] = useState<{ data: ReceiptData } | null>(null)
@@ -191,34 +309,165 @@ export default function SalesPage() {
 
   useEffect(() => { refocusBarcode() }, [])
 
+  // Restore parked tabs from IndexedDB once, on mount (refresh-safe).
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await get<{ tabs: SaleTab[]; activeId: string }>(PARKED_KEY)
+        if (saved?.tabs?.length) {
+          const maxKey = Math.max(0, ...saved.tabs.flatMap(t => t.cart.map(l => l._key)))
+          ensureCartKeyAbove(maxKey)
+          setTabs(saved.tabs)
+          setActiveId(saved.tabs.some(t => t.id === saved.activeId) ? saved.activeId : saved.tabs[0].id)
+        }
+      } catch { /* ignore corrupt cache */ }
+      setRestored(true)
+    })()
+  }, [])
+
+  // Keep activeId pointing at a real tab.
+  useEffect(() => {
+    if (!tabs.some(t => t.id === activeId)) setActiveId(tabs[0].id)
+  }, [tabs, activeId])
+
+  // Persist tabs after the initial restore (so we never clobber saved data with the seed tab).
+  useEffect(() => {
+    if (!restored) return
+    set(PARKED_KEY, { tabs, activeId }).catch(() => {})
+  }, [tabs, activeId, restored])
+
+  // ── Tab operations ──
+  function newTab() {
+    if (tabs.length >= MAX_TABS) return
+    const t = freshTab()
+    setTabs(prev => [...prev, t])
+    setActiveId(t.id)
+    setSelectedKey(null)
+    setAllowOverride(false)
+    refocusBarcode()
+  }
+  function switchTab(id: string) {
+    setActiveId(id)
+    setSelectedKey(null)
+    setAllowOverride(false)
+    refocusBarcode()
+  }
+  function closeTab(id: string) {
+    const rest = tabs.filter(t => t.id !== id)
+    if (rest.length === 0) {
+      const t = freshTab()
+      setTabs([t]); setActiveId(t.id)
+    } else {
+      setTabs(rest)
+      if (id === activeId) setActiveId(rest[0].id)
+    }
+    setSelectedKey(null)
+  }
+
   // ── Totals ──
   const subtotal = cart.reduce((s, l) => s + l.line_total, 0)
   const total = subtotal
+  const receivedNum = Math.max(parseFloat(received) || 0, 0)
   const cashPaid =
     paymentType === 'cash' ? total
     : paymentType === 'udhaar' ? 0
-    : Math.min(Math.max(parseFloat(cashAmount) || 0, 0), total)
+    : Math.min(receivedNum, total) // mixed: cash portion, rest is udhaar
   const due = total - cashPaid
+  // Change is only returned when more cash than the bill was handed over.
+  const changeDue = paymentType === 'udhaar' ? 0 : Math.max(0, receivedNum - total)
+
+  // ── Retail/Wholesale rule violations (client preview; server also enforces) ──
+  const isAdmin = profile?.role === 'admin'
+  const minViolationKeys = cart
+    .filter(l => saleMode === 'wholesale' && isLooseProduct(l.product)
+      && l.product.wholesale_min_qty != null && l.quantity < Number(l.product.wholesale_min_qty))
+    .map(l => l._key)
+  const eligViolation = cart.some(l => !unitEligible(l.unit, saleMode))
+  const ruleBlocked = (minViolationKeys.length > 0 || eligViolation) && !(isAdmin && allowOverride)
 
   // ── Add product to cart ──
   function addProduct(product: Product, unit?: ProductUnit) {
     if (!product.units?.length) return
-    const u = unit ?? product.units.find(x => x.unit_name === 'piece') ?? product.units[0]
-    const computed = computeLine(u, 1, 0, saleMode)
+    const loose = isLooseProduct(product)
+    const base = baseUnitOf(product)
+    // Default unit: explicit → loose base (weight) → mode's eligible unit
+    // (retail=smallest, wholesale=bulk; cigarette pack⇄carton, beverage bottle⇄crate).
+    const chosen = unit ?? (loose ? base : defaultUnitFor(product, saleMode))
+    const computed = computeLine(chosen, 1, 0, saleMode)
     setCart(prev => {
-      const idx = prev.findIndex(l => l.product.id === product.id && l.unit.unit_name === u.unit_name)
+      const idx = prev.findIndex(
+        l => l.product.id === product.id && l.unit.unit_name === chosen.unit_name && l.input_mode === 'qty',
+      )
+      // Loose lines aren't auto-stacked — the cashier sets weight/amount on the existing one.
+      if (idx >= 0 && loose) return prev
       if (idx >= 0) {
         return prev.map((l, i) => {
           if (i !== idx) return l
           const qty = l.quantity + 1
-          return { ...l, quantity: qty, line_total: Math.round(l.unit_price * qty * 100) / 100 }
+          return { ...l, quantity: qty, line_total: round2(l.unit_price * qty) }
         })
       }
-      return [...prev, { _key: Date.now(), product, unit: u, quantity: 1, discount_pct: 0, ...computed }]
+      return [...prev, {
+        _key: nextCartKey(), product, unit: chosen, input_mode: 'qty' as const,
+        quantity: 1, amount: 0, discount_pct: 0, ...computed,
+      }]
     })
     setScanError('')
     setSearchQuery('')
     setShowSuggestions(false)
+  }
+
+  // Recompute a line's money for the current sale mode, respecting its input mode.
+  function recomputeLine(l: CartLine, mode: SaleMode): CartLine {
+    if (l.input_mode === 'amount') return { ...l, ...computeAmountLine(l.unit, l.amount, mode) }
+    return { ...l, ...computeLine(l.unit, l.quantity, l.discount_pct, mode) }
+  }
+
+  // On a mode switch, if a line's unit is no longer eligible (cigarette pack in
+  // wholesale, carton in retail…), auto-switch it to that mode's default eligible
+  // unit and drop back to qty mode; otherwise just recompute.
+  function fixLineForMode(l: CartLine, mode: SaleMode): CartLine {
+    if (unitEligible(l.unit, mode)) return recomputeLine(l, mode)
+    const newUnit = defaultUnitFor(l.product, mode)
+    const qty = l.input_mode === 'qty' ? l.quantity : 1
+    return { ...l, unit: newUnit, input_mode: 'qty', quantity: qty, ...computeLine(newUnit, qty, l.discount_pct, mode) }
+  }
+
+  // ── Loose line controls ──
+  type LooseMode = 'weight' | 'amount' | 'pack'
+  function looseSetMode(key: number, mode: LooseMode) {
+    setCart(prev => prev.map(l => {
+      if (l._key !== key) return l
+      const base = baseUnitOf(l.product)
+      if (mode === 'amount') {
+        const amount = l.amount || l.line_total || 0
+        return { ...l, unit: base, input_mode: 'amount', amount, discount_pct: 0, ...computeAmountLine(base, amount, saleMode) }
+      }
+      if (mode === 'weight') {
+        const qty = l.quantity > 0 ? l.quantity : 1
+        return { ...l, unit: base, input_mode: 'qty', quantity: qty, ...computeLine(base, qty, l.discount_pct, saleMode) }
+      }
+      const packs = packUnitsOf(l.product)
+      const pack = packs.find(u => unitEligible(u, saleMode)) ?? packs[0]
+      if (!pack) return l
+      return { ...l, unit: pack, input_mode: 'qty', quantity: 1, ...computeLine(pack, 1, l.discount_pct, saleMode) }
+    }))
+  }
+
+  // Fractional weight entry (loose weight mode)
+  function setLooseWeight(key: number, raw: string) {
+    const q = Math.max(0, parseFloat(raw) || 0)
+    setCart(prev => prev.map(l =>
+      l._key === key ? { ...l, quantity: q, ...computeLine(l.unit, q, l.discount_pct, saleMode) } : l,
+    ))
+  }
+
+  // "Rs X worth" entry (loose amount mode) — line pinned to amount, weight is preview
+  function setLooseAmount(key: number, raw: string) {
+    const amt = Math.max(0, parseFloat(raw) || 0)
+    setCart(prev => prev.map(l =>
+      l._key === key ? { ...l, amount: amt, discount_pct: 0, ...computeAmountLine(l.unit, amt, saleMode) } : l,
+    ))
   }
 
   // ── Barcode lookup ──
@@ -238,6 +487,15 @@ export default function SalesPage() {
   function handleBarcodeKey(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter') {
       if (barcodeInput.trim()) handleBarcodeScan(barcodeInput)
+      return
+    }
+    // When the field is empty it doubles as a cart navigator (no search text to type).
+    if (barcodeInput.length === 0 && cart.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); moveSel(1) }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); moveSel(-1) }
+      else if (e.key === 'Delete') { e.preventDefault(); if (selectedKey != null) removeItem(selectedKey) }
+      else if (e.key === '+' || e.key === '=') { e.preventDefault(); adjustSel(1) }
+      else if (e.key === '-') { e.preventDefault(); adjustSel(-1) }
     }
   }
 
@@ -273,6 +531,7 @@ export default function SalesPage() {
     setCart(prev =>
       prev.map(l => {
         if (l._key !== key) return l
+        if (l.input_mode === 'amount') return l // discount doesn't apply to "Rs X worth"
         const computed = computeLine(l.unit, l.quantity, val, saleMode)
         return { ...l, discount_pct: val, ...computed }
       }),
@@ -294,7 +553,7 @@ export default function SalesPage() {
   // Switch the whole counter between Retail and Wholesale pricing
   function changeSaleMode(mode: SaleMode) {
     setSaleMode(mode)
-    setCart(prev => prev.map(l => ({ ...l, ...computeLine(l.unit, l.quantity, l.discount_pct, mode) })))
+    setCart(prev => prev.map(l => fixLineForMode(l, mode)))
     refocusBarcode()
   }
 
@@ -311,9 +570,7 @@ export default function SalesPage() {
     // Auto-match the price mode to the customer's type (shopkeeper can still override)
     const mode: SaleMode = c ? (c.customer_type === 'retail' ? 'retail' : 'wholesale') : saleMode
     setSaleMode(mode)
-    setCart(prev =>
-      prev.map(l => ({ ...l, ...computeLine(l.unit, l.quantity, l.discount_pct, mode) })),
-    )
+    setCart(prev => prev.map(l => fixLineForMode(l, mode)))
     refocusBarcode()
   }
 
@@ -336,6 +593,10 @@ export default function SalesPage() {
       setScanError(t('pos.udhaarNeedsCustomer'))
       return
     }
+    if (ruleBlocked) {
+      setScanError(minViolationKeys.length > 0 ? t('pos.belowWholesaleMin') : t('pos.wrongModeUnit'))
+      return
+    }
     if (paymentType === 'mixed' && cashPaid >= total) {
       setPaymentType('cash')
     }
@@ -353,10 +614,13 @@ export default function SalesPage() {
       payment_type: paymentType,
       sale_type: saleMode,
       created_by: session!.user.id,
+      allow_override: isAdmin && allowOverride,
       items: cart.map(l => ({
         product_id: l.product.id,
         unit_name: l.unit.unit_name,
+        input_mode: l.input_mode,
         quantity: l.quantity,
+        amount: l.input_mode === 'amount' ? l.amount : undefined,
         unit_price: l.unit_price,
         discount_pct: l.discount_pct,
         line_total: l.line_total,
@@ -380,17 +644,26 @@ export default function SalesPage() {
       total,
       paid: cashPaid,
       due,
+      tendered: paymentType !== 'udhaar' && receivedNum > 0 ? receivedNum : undefined,
+      change: changeDue > 0 ? changeDue : undefined,
+      // Khata: the customer's balance before this sale + this bill's udhaar.
+      ...(customer
+        ? {
+            previous_balance: Number(customer.current_balance) || 0,
+            new_balance: (Number(customer.current_balance) || 0) + due,
+          }
+        : {}),
     }
     setSaleResult({ data: receiptData })
   }
 
   function startNewSale() {
-    setCart([])
-    setCustomer(null)
-    setPaymentType('cash')
-    setCashAmount('')
+    // Clear the active tab (keep its sale mode + any other parked tabs).
+    patchActive(() => ({ cart: [], customer: null, paymentType: 'cash', received: '' }))
     setScanError('')
     setSaleResult(null)
+    setSelectedKey(null)
+    setAllowOverride(false)
     refocusBarcode()
   }
 
@@ -403,7 +676,8 @@ export default function SalesPage() {
       items: sale.items.map(i => ({
         product_name: i.product?.name_ur || i.product?.name_en || '',
         unit_name: i.unit_name,
-        quantity: i.quantity,
+        // sale_items.quantity is numeric → may arrive as a string; coerce for formatQty
+        quantity: Number(i.quantity),
         unit_price: i.unit_price,
         discount_pct: i.discount_pct,
         line_total: i.line_total,
@@ -414,6 +688,97 @@ export default function SalesPage() {
       due: sale.due,
     }, shop)
   }
+
+  // ── Keyboard: cart-line selection + section cycling ──
+  function moveSel(dir: 1 | -1) {
+    setSelectedKey(cur => {
+      if (!cart.length) return null
+      const idx = cart.findIndex(l => l._key === cur)
+      if (idx === -1) return dir > 0 ? cart[0]._key : cart[cart.length - 1]._key
+      const next = Math.min(Math.max(idx + dir, 0), cart.length - 1)
+      return cart[next]._key
+    })
+  }
+
+  function adjustSel(delta: 1 | -1) {
+    if (selectedKey == null) { moveSel(1); return }
+    const line = cart.find(l => l._key === selectedKey)
+    if (line && line.input_mode !== 'amount') changeQty(selectedKey, delta) // amount lines edit by Rs
+  }
+
+  // Cycle focus across the three POS sections: search → customer → received.
+  function focusSection(dir: 1 | -1) {
+    const els = [barcodeRef.current, customerBtnRef.current, receivedRef.current].filter(Boolean) as HTMLElement[]
+    if (!els.length) return
+    const idx = els.findIndex(el => el === document.activeElement)
+    const next = els[((idx < 0 ? 0 : idx) + dir + els.length) % els.length]
+    next?.focus()
+  }
+
+  function onEscape() {
+    if (showHelp) { setShowHelp(false); return }
+    if (showCamera) { setShowCamera(false); return }
+    if (showCustomerDrop) { setShowCustomerDrop(false); return }
+    if (showNewCustomer) { setShowNewCustomer(false); return }
+  }
+
+  // Latest-state handler table, read by the mount-only key listener (avoids stale closures).
+  const kbd = {
+    focusBarcode: () => barcodeRef.current?.focus(),
+    toggleMode: () => changeSaleMode(saleMode === 'retail' ? 'wholesale' : 'retail'),
+    openCustomer: () => setShowCustomerDrop(v => !v),
+    focusReceived: () => {
+      if (paymentType === 'udhaar') setPaymentType('cash')
+      setTimeout(() => receivedRef.current?.focus(), 30)
+    },
+    // Guard against re-firing behind a blocking modal (would create a duplicate sale).
+    complete: () => {
+      if (saleResult || showNewCustomer || showHelp) return
+      if (cart.length && !createSale.isPending) completeSale()
+    },
+    newSale: () => startNewSale(),
+    newTab: () => newTab(),
+    switchIndex: (i: number) => { if (tabs[i]) switchTab(tabs[i].id) },
+    toggleHelp: () => setShowHelp(v => !v),
+    cycle: (dir: 1 | -1) => focusSection(dir),
+    escape: () => onEscape(),
+  }
+  const kbdRef = useRef(kbd)
+  kbdRef.current = kbd
+
+  // Drop a stale selection when its line leaves the cart.
+  useEffect(() => {
+    if (selectedKey !== null && !cart.some(l => l._key === selectedKey)) setSelectedKey(null)
+  }, [cart, selectedKey])
+
+  // Global shortcuts. Function keys work regardless of focus; we preventDefault so
+  // the browser's own F1/F3/F6 behaviour doesn't fire.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const k = kbdRef.current
+      switch (e.key) {
+        case 'F1': e.preventDefault(); k.toggleHelp(); break
+        case 'F2': e.preventDefault(); k.focusBarcode(); break
+        case 'F3': e.preventDefault(); k.openCustomer(); break
+        case 'F4': e.preventDefault(); k.focusReceived(); break
+        case 'F6': e.preventDefault(); k.toggleMode(); break
+        case 'F9': e.preventDefault(); k.complete(); break
+        case 'Enter': if (e.ctrlKey) { e.preventDefault(); k.complete() } break
+        case 'PageDown': e.preventDefault(); k.cycle(1); break
+        case 'PageUp': e.preventDefault(); k.cycle(-1); break
+        case 'Escape': k.escape(); break
+        default:
+          if (e.altKey) {
+            const key = e.key.toLowerCase()
+            if (key === 'c') { e.preventDefault(); k.newSale() }
+            else if (key === 'n' || key === 'h') { e.preventDefault(); k.newTab() }
+            else if (/^[1-6]$/.test(e.key)) { e.preventDefault(); k.switchIndex(Number(e.key) - 1) }
+          }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // ── Search suggestions (live filter from the first character) ──
   const suggestions = searchQuery.trim().length > 0
@@ -437,8 +802,52 @@ export default function SalesPage() {
   const discountMax = profile?.role === 'admin' ? 100 : (profile?.discount_limit ?? 0)
 
   return (
-    <div className="flex flex-col lg:flex-row gap-3 -m-4 lg:-m-6 lg:overflow-hidden"
+    <div className="flex flex-col -m-4 lg:-m-6 lg:overflow-hidden"
       style={{ minHeight: 'calc(100vh - 4rem)' }}>
+
+      {/* ═══ Sale tabs (parked / parallel sales) ═══ */}
+      <div className="flex items-center gap-1 px-3 lg:px-4 pt-2 pb-1 overflow-x-auto shrink-0">
+        {tabs.map((tab, i) => (
+          <div
+            key={tab.id}
+            onClick={() => switchTab(tab.id)}
+            className={cn(
+              'group flex items-center gap-1.5 h-8 ps-3 pe-1.5 rounded-t-card border-b-2 text-sm cursor-pointer shrink-0 transition-colors',
+              tab.id === active.id
+                ? 'bg-surface border-brand text-ink font-semibold'
+                : 'bg-page border-transparent text-ink-muted hover:text-ink',
+            )}
+          >
+            <span className="whitespace-nowrap">{t('pos.saleTab', { n: i + 1 })}</span>
+            {tab.cart.length > 0 && (
+              <span className="min-w-4 h-4 px-1 rounded-full bg-brand/15 text-brand text-[10px] font-bold flex items-center justify-center tabular-nums">
+                {tab.cart.length}
+              </span>
+            )}
+            <button
+              onClick={e => { e.stopPropagation(); closeTab(tab.id) }}
+              title={t('pos.closeTab')}
+              className="w-5 h-5 rounded flex items-center justify-center text-ink-muted/60 hover:text-due hover:bg-due/10 transition-colors"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ))}
+        {tabs.length < MAX_TABS && (
+          <button
+            onClick={newTab}
+            title={t('pos.newTab')}
+            className="flex items-center gap-1 h-8 px-2.5 text-sm text-brand hover:bg-brand/5 rounded-t-card shrink-0 transition-colors"
+          >
+            <Plus size={14} />
+            <span className="hidden sm:inline">{t('pos.newTab')}</span>
+            <Kbd k="Alt+N" />
+          </button>
+        )}
+      </div>
+
+      {/* ═══ Columns row ═══ */}
+      <div className="flex flex-col lg:flex-row gap-3 flex-1 lg:overflow-hidden">
 
       {/* ═══ Left Column: barcode + cart ═══ */}
       <div className="flex-1 flex flex-col min-w-0 p-3 lg:p-4 gap-3">
@@ -449,13 +858,14 @@ export default function SalesPage() {
               key={mode}
               onClick={() => changeSaleMode(mode)}
               className={cn(
-                'h-12 rounded-card font-bold text-base border-2 transition-all active:scale-[0.99]',
+                'h-12 rounded-card font-bold text-base border-2 transition-all active:scale-[0.99] flex items-center justify-center gap-2',
                 saleMode === mode
                   ? 'bg-brand text-white border-brand shadow-sm'
                   : 'bg-surface text-ink-muted border-line hover:border-brand hover:text-brand',
               )}
             >
               {t(`pos.${mode}`)}
+              {saleMode === mode && <Kbd k="F6" dark />}
             </button>
           ))}
         </div>
@@ -513,6 +923,14 @@ export default function SalesPage() {
           >
             <Camera size={16} />
             <span className="hidden sm:inline">{t('pos.scanCamera')}</span>
+          </button>
+          <button
+            onClick={() => setShowHelp(true)}
+            title={t('pos.shortcuts')}
+            className="h-10 px-3 rounded-input border border-line bg-surface text-ink-muted hover:text-brand hover:border-brand transition-colors flex items-center gap-1.5 text-sm"
+          >
+            <Keyboard size={16} />
+            <Kbd k="F1" />
           </button>
         </div>
 
@@ -595,27 +1013,61 @@ export default function SalesPage() {
               </thead>
               <tbody>
                 <AnimatePresence initial={false}>
-                  {cart.map(line => (
+                  {cart.map(line => {
+                    const loose = isLooseProduct(line.product)
+                    const bLabel = unitShort(line.product.base_unit)
+                    const packs = packUnitsOf(line.product)
+                    const eligPacks = packs.filter(u => unitEligible(u, saleMode))
+                    const modeUnits = (line.product.units ?? []).filter(u => unitEligible(u, saleMode))
+                    const wMin = line.product.wholesale_min_qty
+                    const belowMin = saleMode === 'wholesale' && loose && wMin != null && line.quantity < Number(wMin)
+                    const lmode: LooseMode =
+                      line.input_mode === 'amount' ? 'amount'
+                      : line.unit.unit_name === line.product.base_unit ? 'weight'
+                      : 'pack'
+                    return (
                     <motion.tr
                       key={line._key}
+                      onClick={() => setSelectedKey(line._key)}
                       initial={{ opacity: 0, x: -12 }}
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0, x: 12, height: 0 }}
                       transition={{ duration: 0.18 }}
-                      className="border-b border-line last:border-0 hover:bg-brand/[0.03]"
+                      className={cn(
+                        'border-b border-line last:border-0 align-top cursor-default',
+                        selectedKey === line._key
+                          ? 'bg-brand/[0.06] ring-1 ring-inset ring-brand/40'
+                          : 'hover:bg-brand/[0.03]',
+                      )}
                     >
+                      {/* ── Unit / mode ── */}
                       <td className="px-3 py-2">
                         <div className="font-medium text-ink leading-tight">{line.product.name_en}</div>
-                        {line.product.units && line.product.units.length > 1 ? (
+                        {loose ? (
+                          <div className="mt-1 inline-flex rounded border border-line overflow-hidden text-[11px]">
+                            {(['weight', 'amount', ...(eligPacks.length ? ['pack'] : [])] as LooseMode[]).map(m => (
+                              <button
+                                key={m}
+                                onClick={() => looseSetMode(line._key, m)}
+                                className={cn(
+                                  'px-2 py-0.5 transition-colors',
+                                  lmode === m ? 'bg-brand text-white' : 'text-ink-muted hover:text-brand',
+                                )}
+                              >
+                                {t(`pos.loose_${m}`)}
+                              </button>
+                            ))}
+                          </div>
+                        ) : modeUnits.length > 1 ? (
                           <select
                             value={line.unit.unit_name}
                             onChange={e => {
-                              const u = line.product.units!.find(x => x.unit_name === e.target.value)
+                              const u = modeUnits.find(x => x.unit_name === e.target.value)
                               if (u) changeUnit(line._key, u)
                             }}
                             className="mt-0.5 text-xs text-ink-muted bg-transparent border border-line rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-brand"
                           >
-                            {line.product.units.map(u => (
+                            {modeUnits.map(u => (
                               <option key={u.unit_name} value={u.unit_name}>{u.unit_name}</option>
                             ))}
                           </select>
@@ -623,44 +1075,92 @@ export default function SalesPage() {
                           <div className="text-xs text-ink-muted mt-0.5">{line.unit.unit_name}</div>
                         )}
                       </td>
+
+                      {/* ── Quantity / weight / amount ── */}
                       <td className="px-3 py-2">
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => changeQty(line._key, -1)}
-                            className="w-6 h-6 rounded-full border border-line flex items-center justify-center hover:border-due hover:text-due transition-colors"
-                          >
-                            <Minus size={11} />
-                          </button>
-                          <input
-                            type="number"
-                            min={1}
-                            value={line.quantity}
-                            onChange={e => setQtyAbs(line._key, e.target.value)}
-                            className="w-12 h-7 text-center font-semibold tabular-nums border border-line rounded bg-surface text-ink focus:outline-none focus:ring-1 focus:ring-brand"
-                          />
-                          <button
-                            onClick={() => changeQty(line._key, 1)}
-                            className="w-6 h-6 rounded-full border border-line flex items-center justify-center hover:border-brand hover:text-brand transition-colors"
-                          >
-                            <Plus size={11} />
-                          </button>
-                        </div>
+                        {loose && lmode === 'weight' ? (
+                          <div>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number" min={0} step="0.001" value={line.quantity || ''}
+                                onChange={e => setLooseWeight(line._key, e.target.value)}
+                                placeholder="0"
+                                className={cn('w-20 h-7 text-center font-semibold tabular-nums border rounded bg-surface text-ink focus:outline-none focus:ring-1 focus:ring-brand',
+                                  belowMin ? 'border-due' : 'border-line')}
+                              />
+                              <span className="text-xs text-ink-muted">{bLabel}</span>
+                            </div>
+                            {saleMode === 'wholesale' && wMin != null && (
+                              <div className={cn('text-[11px] mt-0.5', belowMin ? 'text-due font-medium' : 'text-ink-muted')}>
+                                {t('pos.minWholesale', { qty: formatQty(Number(wMin)), unit: bLabel })}
+                              </div>
+                            )}
+                          </div>
+                        ) : loose && lmode === 'amount' ? (
+                          <div>
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-ink-muted">Rs</span>
+                              <input
+                                type="number" min={0} step="1" value={line.amount || ''}
+                                onChange={e => setLooseAmount(line._key, e.target.value)}
+                                placeholder="0"
+                                className={cn('w-20 h-7 text-center font-semibold tabular-nums border rounded bg-surface text-ink focus:outline-none focus:ring-1 focus:ring-brand',
+                                  belowMin ? 'border-due' : 'border-line')}
+                              />
+                            </div>
+                            <div className={cn('text-[11px] mt-0.5', belowMin ? 'text-due font-medium' : 'text-ink-muted')}>
+                              ≈ {formatQty(line.quantity)} {bLabel}
+                              {saleMode === 'wholesale' && wMin != null ? ` · ${t('pos.minWholesale', { qty: formatQty(Number(wMin)), unit: bLabel })}` : ''}
+                            </div>
+                          </div>
+                        ) : loose && lmode === 'pack' ? (
+                          <div className="flex items-center gap-1">
+                            <select
+                              value={line.unit.unit_name}
+                              onChange={e => {
+                                const u = eligPacks.find(x => x.unit_name === e.target.value)
+                                if (u) changeUnit(line._key, u)
+                              }}
+                              className="h-7 text-xs bg-surface border border-line rounded px-1 focus:outline-none focus:ring-1 focus:ring-brand"
+                            >
+                              {eligPacks.map(u => <option key={u.unit_name} value={u.unit_name}>{u.unit_name}</option>)}
+                            </select>
+                            <button onClick={() => changeQty(line._key, -1)} className="w-6 h-6 rounded-full border border-line flex items-center justify-center hover:border-due hover:text-due"><Minus size={11} /></button>
+                            <input type="number" min={1} value={line.quantity}
+                              onChange={e => setQtyAbs(line._key, e.target.value)}
+                              className="w-10 h-7 text-center font-semibold tabular-nums border border-line rounded bg-surface text-ink focus:outline-none focus:ring-1 focus:ring-brand" />
+                            <button onClick={() => changeQty(line._key, 1)} className="w-6 h-6 rounded-full border border-line flex items-center justify-center hover:border-brand hover:text-brand"><Plus size={11} /></button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => changeQty(line._key, -1)} className="w-6 h-6 rounded-full border border-line flex items-center justify-center hover:border-due hover:text-due transition-colors"><Minus size={11} /></button>
+                            <input type="number" min={1} value={line.quantity}
+                              onChange={e => setQtyAbs(line._key, e.target.value)}
+                              className="w-12 h-7 text-center font-semibold tabular-nums border border-line rounded bg-surface text-ink focus:outline-none focus:ring-1 focus:ring-brand" />
+                            <button onClick={() => changeQty(line._key, 1)} className="w-6 h-6 rounded-full border border-line flex items-center justify-center hover:border-brand hover:text-brand transition-colors"><Plus size={11} /></button>
+                          </div>
+                        )}
                       </td>
+
+                      {/* ── Rate ── */}
                       <td className="px-3 py-2 text-ink-muted tabular-nums text-xs">
-                        {formatPKR(line.list_price)}
+                        {formatPKR(line.list_price)}{loose && lmode !== 'pack' ? `/${bLabel}` : ''}
                       </td>
+
+                      {/* ── Discount ── */}
                       {discountMax > 0 && (
                         <td className="px-3 py-2">
-                          <input
-                            type="number"
-                            min={0}
-                            max={discountMax}
-                            step={1}
-                            value={line.discount_pct || ''}
-                            onChange={e => changeDiscount(line._key, e.target.value)}
-                            placeholder="0"
-                            className="w-14 border border-line rounded px-1.5 py-0.5 text-xs text-ink bg-surface focus:outline-none focus:ring-1 focus:ring-brand"
-                          />
+                          {loose && lmode === 'amount' ? (
+                            <span className="text-xs text-ink-muted/50">—</span>
+                          ) : (
+                            <input
+                              type="number" min={0} max={discountMax} step={1}
+                              value={line.discount_pct || ''}
+                              onChange={e => changeDiscount(line._key, e.target.value)}
+                              placeholder="0"
+                              className="w-14 border border-line rounded px-1.5 py-0.5 text-xs text-ink bg-surface focus:outline-none focus:ring-1 focus:ring-brand"
+                            />
+                          )}
                         </td>
                       )}
                       <td className="px-3 py-2 text-end font-semibold tabular-nums text-ink">
@@ -675,7 +1175,8 @@ export default function SalesPage() {
                         </button>
                       </td>
                     </motion.tr>
-                  ))}
+                    )
+                  })}
                 </AnimatePresence>
               </tbody>
             </table>
@@ -690,9 +1191,11 @@ export default function SalesPage() {
           <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide flex items-center gap-1.5">
             <User size={12} />
             {t('pos.customer')}
+            <span className="ms-auto"><Kbd k="F3" /></span>
           </label>
           <div className="relative">
             <button
+              ref={customerBtnRef}
               onClick={() => { setShowCustomerDrop(v => !v); setCustomerSearch('') }}
               className="w-full h-9 rounded-input border border-line bg-page text-start px-3 text-sm flex items-center justify-between gap-2 hover:border-brand transition-colors"
             >
@@ -792,19 +1295,48 @@ export default function SalesPage() {
               </button>
             ))}
           </div>
-          {paymentType === 'mixed' && (
-            <div>
-              <label className="text-xs text-ink-muted mb-1 block">{t('pos.cashNow')}</label>
+          {paymentType !== 'udhaar' && (
+            <div className="mt-1">
+              <label className="text-xs text-ink-muted mb-1 flex items-center">
+                {paymentType === 'mixed' ? t('pos.cashNow') : t('pos.received')}
+                <span className="ms-auto"><Kbd k="F4" /></span>
+              </label>
               <input
+                ref={receivedRef}
                 type="number"
                 min={0}
-                max={total}
                 step={1}
-                value={cashAmount}
-                onChange={e => setCashAmount(e.target.value)}
+                value={received}
+                onChange={e => setReceived(e.target.value)}
+                onKeyDown={e => { if (e.key === '*') { e.preventDefault(); setReceived(String(total)) } }}
                 placeholder="0"
-                className="w-full h-9 rounded-input border border-line bg-page px-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand"
+                className="w-full h-9 rounded-input border border-line bg-page px-3 text-base font-semibold tabular-nums text-ink focus:outline-none focus:ring-2 focus:ring-brand"
               />
+              <div className="flex flex-wrap gap-1 mt-1.5">
+                {[500, 1000, 5000].map(amt => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => setReceived(String(amt))}
+                    className="h-7 px-2.5 rounded-btn border border-line text-xs text-ink-muted hover:border-brand hover:text-brand transition-colors tabular-nums"
+                  >
+                    {amt}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setReceived(String(total))}
+                  className="h-7 px-2.5 rounded-btn border border-brand text-xs text-brand font-medium hover:bg-brand/5 transition-colors"
+                >
+                  {t('pos.exact')}
+                </button>
+              </div>
+              {changeDue > 0 && (
+                <div className="mt-2 rounded-input bg-cash/10 border border-cash/25 px-3 py-2 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-cash uppercase tracking-wide">{t('pos.change')}</span>
+                  <span className="text-xl font-bold text-cash tabular-nums">{formatPKR(changeDue)}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -841,13 +1373,34 @@ export default function SalesPage() {
           )}
         </div>
 
+        {/* Retail/wholesale rule violation + admin override */}
+        {(minViolationKeys.length > 0 || eligViolation) && (
+          <div className="rounded-input border border-due/30 bg-due/5 p-2.5 flex flex-col gap-1.5">
+            <div className="text-xs text-due font-medium">
+              {minViolationKeys.length > 0 ? t('pos.belowWholesaleMin') : t('pos.wrongModeUnit')}
+            </div>
+            {isAdmin && (
+              <label className="flex items-center gap-2 text-xs text-ink cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={allowOverride}
+                  onChange={e => setAllowOverride(e.target.checked)}
+                  className="w-4 h-4 rounded border-line text-brand focus:ring-brand/30"
+                />
+                {t('pos.overrideLimits')}
+              </label>
+            )}
+          </div>
+        )}
+
         {/* Complete button */}
         <button
           onClick={completeSale}
-          disabled={cart.length === 0 || createSale.isPending}
-          className="w-full h-12 rounded-card bg-brand text-white font-bold text-base hover:bg-brand/90 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
+          disabled={cart.length === 0 || createSale.isPending || ruleBlocked}
+          className="w-full h-12 rounded-card bg-brand text-white font-bold text-base hover:bg-brand/90 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm flex items-center justify-center gap-2"
         >
           {createSale.isPending ? t('pos.completing') : t('pos.completeSale')}
+          {!createSale.isPending && <Kbd k="F9" dark />}
         </button>
 
         {createSale.isError && (
@@ -856,6 +1409,7 @@ export default function SalesPage() {
           </div>
         )}
       </div>
+      </div>{/* end columns row */}
 
       {/* ═══ Camera scanner overlay ═══ */}
       <AnimatePresence>
@@ -973,6 +1527,43 @@ export default function SalesPage() {
                   {t('pos.newSale')}
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ Keyboard shortcuts cheat sheet (F1) ═══ */}
+      <AnimatePresence>
+        {showHelp && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/50"
+              onClick={() => setShowHelp(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-surface rounded-card border border-line shadow-2xl w-full max-w-md p-5"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-ink flex items-center gap-2">
+                  <Keyboard size={16} className="text-brand" />
+                  {t('pos.shortcuts')}
+                </h3>
+                <button onClick={() => setShowHelp(false)} className="text-ink-muted hover:text-ink transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+              <ul className="space-y-1.5">
+                {SHORTCUTS.map(([combo, key]) => (
+                  <li key={combo} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="text-ink-muted">{t(key)}</span>
+                    <Kbd k={combo} />
+                  </li>
+                ))}
+              </ul>
             </motion.div>
           </div>
         )}

@@ -6,7 +6,7 @@ import { useCustomers } from '@/features/customers/hooks/useCustomers'
 import { useSuppliers } from '@/features/suppliers/hooks/useSuppliers'
 import { useProducts } from '@/features/products/hooks/useProducts'
 import { useAuth } from '@/features/auth/AuthContext'
-import { formatPKR } from '@/lib/format'
+import { formatPKR, formatQty, unitShort } from '@/lib/format'
 import { downloadCSV } from '@/lib/exportCSV'
 import { cn } from '@/lib/utils'
 
@@ -265,7 +265,7 @@ export default function ReportsPage() {
                   <tr key={i} className="border-b border-line last:border-0 hover:bg-page/50 transition-colors">
                     <td className="px-4 py-3 text-ink font-medium">{r.product_name}</td>
                     <td className="px-4 py-3 text-ink-muted capitalize">{r.unit_name}</td>
-                    <td className="px-4 py-3 text-end tabular-nums text-ink">{r.total_qty}</td>
+                    <td className="px-4 py-3 text-end tabular-nums text-ink">{formatQty(r.total_qty)}</td>
                     <td className="px-4 py-3 text-end font-semibold tabular-nums text-ink">{formatPKR(r.revenue)}</td>
                   </tr>
                 ))}
@@ -362,12 +362,12 @@ export default function ReportsPage() {
               </thead>
               <tbody>
                 {lowStockItems.map(p => {
-                  const qty = p.stock?.[0]?.quantity_in_base_unit ?? 0
+                  const qty = Number(p.stock?.[0]?.quantity_in_base_unit ?? 0)
                   return (
                     <tr key={p.id} className="border-b border-line last:border-0 hover:bg-page/50 transition-colors">
                       <td className="px-4 py-3 font-medium text-ink">{p.name_en}</td>
                       <td className="px-4 py-3 text-ink-muted">{p.category?.name_en ?? '—'}</td>
-                      <td className="px-4 py-3 text-end font-bold tabular-nums text-low">{qty}</td>
+                      <td className="px-4 py-3 text-end font-bold tabular-nums text-low">{formatQty(qty)} {unitShort(p.base_unit)}</td>
                       <td className="px-4 py-3 text-end tabular-nums text-ink-muted">{p.min_stock_level}</td>
                     </tr>
                   )

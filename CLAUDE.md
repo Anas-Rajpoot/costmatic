@@ -2,6 +2,26 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Commands
+
+```bash
+npm run dev        # start Vite dev server at localhost:5173
+npm run build      # tsc + vite build (what Vercel runs)
+npm run typecheck  # tsc --noEmit, no emit — run before every PR
+npm run preview    # serve the built dist/ locally
+```
+
+Vitest is configured — `npm test` runs the unit suite (`src/lib/*.test.ts`: money/stock/weight math). Playwright (e2e) is not set up yet. Additional testing priorities are listed below.
+
+## Environment setup
+
+```bash
+cp .env.example .env.local
+# then fill in VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY from the Supabase dashboard
+```
+
+Never commit `.env.local`. Use a separate Supabase project for staging vs production.
+
 ## What this is
 
 A wholesale beauty/cosmetics shop management system for a Pakistani shop. Built as an online-first PWA that degrades gracefully offline. The master spec is `wholesale-shop-software-spec.md` — read the relevant section of it before starting any feature. Skills in `.claude/skills/` provide module-specific rules; they activate automatically when tasks match.
@@ -35,7 +55,30 @@ src/
   hooks/  types/  styles/
 ```
 
+The `@/` path alias resolves to `src/` (configured in `tsconfig.json` and `vite.config.ts`). Use it for all cross-folder imports.
+
 Each feature folder is self-contained with its own components, hooks, queries, and types. Data access goes through TanStack Query hooks — never raw fetch in components.
+
+### Provider nesting order (src/main.tsx)
+
+```
+BrowserRouter
+  PersistQueryClientProvider   ← IndexedDB cache persister (key: costmatic_query_cache)
+    SyncProvider               ← offline queue state + flush trigger
+      AuthProvider             ← Supabase session + profile + idle timeout
+        App                    ← routes
+```
+
+Order matters — `SyncProvider` must be outside `AuthProvider` so the sync context is available when the auth layer first loads.
+
+**Cache buster:** when the shape/semantics of any cached query changes, bump the `buster` string in `main.tsx` (`costmatic-YYYY-MM-DD`) so stale IndexedDB caches are discarded on next load.
+
+### Route guard hierarchy (src/App.tsx)
+
+- `/login` — public
+- `RequireAuth` wraps all app routes (redirects to `/login` if no session)
+- `RequireAdmin` wraps `/products`, `/customers`, `/reports`, `/suppliers`, `/purchases`, `/settings`, `/users` — employees are redirected to `/dashboard`
+- Employees see only `/dashboard` and `/sales`
 
 ## Key conventions
 
@@ -103,7 +146,9 @@ Build in order and test each phase before starting the next (spec Section 11):
 
 ## Offline / sync
 
-v1 only until it works: TanStack Query persisted to IndexedDB for offline reads, a write queue for sales/payments made offline. Sync when online returns. Make sync idempotent (use client UUIDs as sale ids). Flag oversell conflicts to the admin rather than silently dropping. Do not introduce RxDB or PowerSync until v1 offline is proven working.
+v1 only until it works: TanStack Query persisted to IndexedDB for offline reads, a write queue for sales made offline. Sync when online returns. Make sync idempotent (use client UUIDs as sale ids). Flag oversell conflicts to the admin rather than silently dropping. Do not introduce RxDB or PowerSync until v1 offline is proven working.
+
+**Current limitation:** only `create_sale` is queued offline (`src/lib/offlineQueue.ts`). Payments, purchases, and other writes fail silently offline — they are not yet queued. The offline queue stores items under the IndexedDB key `costmatic_offline_queue`.
 
 ## Testing priorities
 

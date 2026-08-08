@@ -51,7 +51,11 @@ export function useRecentSales(limit = 10) {
 export interface SaleItemInput {
   product_id: string
   unit_name: string
+  // 'qty' = sell a (fractional for loose) quantity of the unit;
+  // 'amount' = loose "Rs X worth", server reverse-calculates the weight.
+  input_mode?: 'qty' | 'amount'
   quantity: number
+  amount?: number // only for input_mode 'amount' (Rs the customer asked for)
   unit_price: number
   discount_pct: number
   line_total: number
@@ -69,6 +73,9 @@ export interface CreateSaleInput {
   payment_type: 'cash' | 'udhaar' | 'mixed'
   sale_type: 'retail' | 'wholesale'
   created_by: string
+  // Admin-only: bypass retail/wholesale eligibility + loose wholesale-minimum.
+  // Honoured server-side only when the caller is an admin.
+  allow_override?: boolean
   items: SaleItemInput[]
 }
 
@@ -111,6 +118,7 @@ export function useCreateSale() {
         p_items:        input.items,
         p_client_id:    clientId,
         p_sale_type:    input.sale_type,
+        p_allow_override: input.allow_override ?? false,
       })
       if (error) throw error
       return data as { sale_id: string; invoice_no: string }

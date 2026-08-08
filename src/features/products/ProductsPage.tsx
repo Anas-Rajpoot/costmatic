@@ -6,7 +6,7 @@ import { useProducts, useDeleteProduct } from './hooks/useProducts'
 import { useCategories } from './hooks/useCategories'
 import CategoryDialog from './components/CategoryDialog'
 import ProductDrawer from './components/ProductDrawer'
-import { formatPKR } from '@/lib/format'
+import { formatPKR, formatQty, unitShort } from '@/lib/format'
 import { useAuth } from '@/features/auth/AuthContext'
 import type { Product } from '@/types'
 import { cn } from '@/lib/utils'
@@ -44,7 +44,8 @@ export default function ProductsPage() {
   }
 
   function stockQty(p: Product): number {
-    return p.stock?.[0]?.quantity_in_base_unit ?? 0
+    // quantity_in_base_unit is numeric → PostgREST returns it as a string; coerce.
+    return Number(p.stock?.[0]?.quantity_in_base_unit ?? 0)
   }
 
   function isLowStock(p: Product): boolean {
@@ -52,7 +53,7 @@ export default function ProductsPage() {
   }
 
   function unitBadges(p: Product) {
-    return (p.units ?? []).map(u => u.unit_name.charAt(0).toUpperCase()).join(' · ')
+    return (p.units ?? []).map(u => u.unit_name).join(' · ')
   }
 
   return (
@@ -195,7 +196,7 @@ export default function ProductsPage() {
                           ? 'bg-low/15 text-low'
                           : 'bg-cash-soft text-cash'
                       )}>
-                        {qty}
+                        {formatQty(qty)} {unitShort(p.base_unit)}
                         {low && <span className="font-normal">{t('products.lowStock')}</span>}
                       </span>
                     </td>

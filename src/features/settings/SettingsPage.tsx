@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { Save, Printer, Clock, Store, SlidersHorizontal, CheckCircle, X } from 'lucide-react'
 import { useSettings, useSaveSettings, useAuditLog } from './hooks/useSettings'
 import { useProducts } from '@/features/products/hooks/useProducts'
+import { escapeHtml } from '@/lib/escapeHtml'
 import { cn } from '@/lib/utils'
 
 type Tab = 'shop' | 'prefs' | 'labels' | 'audit'
@@ -191,7 +192,7 @@ function BarcodeLabelPrinter() {
 
       const labels = rendered.map(l => `
         <div class="label">
-          <div class="name">${l.name}</div>
+          <div class="name">${escapeHtml(l.name)}</div>
           <img src="${l.img}" />
         </div>`).join('')
 
