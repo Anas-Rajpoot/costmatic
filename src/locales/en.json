@@ -183,7 +183,20 @@
     "paidToKhata": "Paid to Khata",
     "previousBalance": "Previous Balance",
     "plusThisBillUdhaar": "+ This Bill Udhaar",
-    "newBalance": "New Balance"
+    "newBalance": "New Balance",
+    "sc_multiply": "Quantity shortcut: 3*sugar adds 3, 3* sets the selected line",
+    "sc_enterAdd": "Add the highlighted search result",
+    "sc_payment": "Cycle Cash / Udhaar / Mixed",
+    "sc_unit": "Change the selected line's unit",
+    "sc_disc": "Edit the selected line's discount",
+    "sc_billPlusOld": "Fill bill + old balance",
+    "inStock": "Stock",
+    "kb_search": "Search",
+    "kb_customer": "Customer",
+    "kb_payment": "Payment",
+    "kb_mode": "Retail/Wholesale",
+    "kb_unit": "Unit",
+    "kb_complete": "Complete"
   },
   "customers": {
     "title": "Customers",

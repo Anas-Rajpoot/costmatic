@@ -14,6 +14,7 @@ import {
   unitEligible, defaultUnitFor, type SaleMode,
 } from '@/lib/pricing'
 import { printReceipt, type ReceiptData, type ShopInfo } from '@/lib/receipt'
+import { parseEntry } from '@/lib/posEntry'
 import { cn } from '@/lib/utils'
 import type { Product, ProductUnit, Customer } from '@/types'
 import CameraScanner from './components/CameraScanner'
@@ -72,15 +73,21 @@ function Kbd({ k, dark }: { k: string; dark?: boolean }) {
 // Rows for the F1 cheat sheet: [key combo, i18n action key].
 const SHORTCUTS: [string, string][] = [
   ['F2', 'pos.sc_search'],
+  ['3*name / 3*', 'pos.sc_multiply'],
+  ['↵', 'pos.sc_enterAdd'],
   ['F3', 'pos.sc_customer'],
   ['F4', 'pos.sc_received'],
+  ['F5', 'pos.sc_payment'],
   ['F6', 'pos.sc_mode'],
+  ['F7', 'pos.sc_unit'],
+  ['F8', 'pos.sc_disc'],
   ['F9 / Ctrl+Enter', 'pos.sc_complete'],
   ['PgUp / PgDn', 'pos.sc_cycle'],
   ['↑ / ↓', 'pos.sc_navline'],
   ['+ / −', 'pos.sc_qty'],
   ['Del', 'pos.sc_remove'],
   ['*', 'pos.sc_exact'],
+  ['+ (in Received)', 'pos.sc_billPlusOld'],
   ['Alt+N / Alt+H', 'pos.sc_newtab'],
   ['Alt+1…6', 'pos.sc_switchtab'],
   ['Alt+C', 'pos.sc_new'],
@@ -143,6 +150,7 @@ export default function SalesPage() {
   const customerBtnRef = useRef<HTMLButtonElement>(null)
   const [scanError, setScanError] = useState('')
   const [showCamera, setShowCamera] = useState(false)
+  const [highlight, setHighlight] = useState(0) // keyboard-selected suggestion
 
   // ── Keyboard ──
   const [selectedKey, setSelectedKey] = useState<number | null>(null) // highlighted cart line
@@ -264,14 +272,15 @@ export default function SalesPage() {
   const ruleBlocked = (minViolationKeys.length > 0 || eligViolation) && !(isAdmin && allowOverride)
 
   // ── Add product to cart ──
-  function addProduct(product: Product, unit?: ProductUnit) {
+  function addProduct(product: Product, unit?: ProductUnit, addQty = 1) {
     if (!product.units?.length) return
     const loose = isLooseProduct(product)
     const base = baseUnitOf(product)
     // Default unit: explicit → loose base (weight) → mode's eligible unit
     // (retail=smallest, wholesale=bulk; cigarette pack⇄carton, beverage bottle⇄crate).
     const chosen = unit ?? (loose ? base : defaultUnitFor(product, saleMode))
-    const computed = computeLine(chosen, 1, 0, saleMode)
+    const qtyIn = addQty > 0 ? addQty : 1
+    const computed = computeLine(chosen, qtyIn, 0, saleMode)
     setCart(prev => {
       const idx = prev.findIndex(
         l => l.product.id === product.id && l.unit.unit_name === chosen.unit_name && l.input_mode === 'qty',
@@ -281,18 +290,19 @@ export default function SalesPage() {
       if (idx >= 0) {
         return prev.map((l, i) => {
           if (i !== idx) return l
-          const qty = l.quantity + 1
+          const qty = l.quantity + qtyIn
           return { ...l, quantity: qty, line_total: round2(l.unit_price * qty) }
         })
       }
       return [...prev, {
         _key: nextCartKey(), product, unit: chosen, input_mode: 'qty' as const,
-        quantity: 1, amount: 0, discount_pct: 0, ...computed,
+        quantity: qtyIn, amount: 0, discount_pct: 0, ...computed,
       }]
     })
     setScanError('')
     setSearchQuery('')
     setShowSuggestions(false)
+    setHighlight(0)
   }
 
   // Recompute a line's money for the current sale mode, respecting its input mode.
@@ -353,12 +363,12 @@ export default function SalesPage() {
   }
 
   // ── Barcode lookup ──
-  function handleBarcodeScan(code: string) {
+  function handleBarcodeScan(code: string, qty = 1) {
     const trimmed = code.trim()
     if (!trimmed) return
     const match = products.find(p => p.barcode === trimmed && p.is_active)
     if (match) {
-      addProduct(match)
+      addProduct(match, undefined, qty)
     } else {
       setScanError(t('pos.productNotFound') + ': ' + trimmed)
     }
@@ -366,11 +376,48 @@ export default function SalesPage() {
     refocusBarcode()
   }
 
-  function handleBarcodeKey(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter') {
-      if (barcodeInput.trim()) handleBarcodeScan(barcodeInput)
+  function clearEntry() {
+    setBarcodeInput('')
+    setSearchQuery('')
+    setShowSuggestions(false)
+    setHighlight(0)
+  }
+
+  // Enter in the search box, in priority order:
+  //   "3*" alone          → set the selected line's quantity to 3
+  //   exact barcode match → add that product (scanner path, wins over any name match)
+  //   a highlighted / only suggestion → add it (keyboard, no mouse needed)
+  //   otherwise           → "not found"
+  function submitEntry() {
+    const raw = barcodeInput.trim()
+    if (!raw) return
+    const { qty, term } = parseEntry(raw)
+
+    if (!term) {
+      if (selectedKey != null && qty > 0) setQtyAbs(selectedKey, String(qty))
+      clearEntry()
       return
     }
+
+    const exact = products.find(p => p.barcode === term && p.is_active)
+    if (exact) { addProduct(exact, undefined, qty); clearEntry(); return }
+
+    if (suggestions.length > 0) {
+      addProduct(suggestions[Math.min(highlight, suggestions.length - 1)], undefined, qty)
+      clearEntry()
+      return
+    }
+    handleBarcodeScan(term, qty)
+  }
+
+  function handleBarcodeKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    // Arrow keys walk the suggestion list while there is something to choose from.
+    if (showSuggestions && suggestions.length > 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      e.preventDefault()
+      setHighlight(h => (h + (e.key === 'ArrowDown' ? 1 : -1) + suggestions.length) % suggestions.length)
+      return
+    }
+    if (e.key === 'Enter') { e.preventDefault(); submitEntry(); return }
     // When the field is empty it doubles as a cart navigator (no search text to type).
     if (barcodeInput.length === 0 && cart.length > 0) {
       if (e.key === 'ArrowDown') { e.preventDefault(); moveSel(1) }
@@ -621,6 +668,36 @@ export default function SalesPage() {
       if (paymentType === 'udhaar') setPaymentType('cash')
       setTimeout(() => receivedRef.current?.focus(), 30)
     },
+    // F5 — cash → udhaar → mixed → cash, without reaching for the mouse.
+    cyclePayment: () => {
+      const order = ['cash', 'udhaar', 'mixed'] as const
+      setPaymentType(order[(order.indexOf(paymentType) + 1) % order.length])
+    },
+    // F7 — swap the selected line between its units (piece ⇄ dozen ⇄ carton).
+    cycleUnit: () => {
+      if (selectedKey == null) return
+      const line = cart.find(l => l._key === selectedKey)
+      if (!line) return
+      const units = (line.product.units ?? []).filter(u => unitEligible(u, saleMode))
+      if (units.length < 2) return
+      const i = units.findIndex(u => u.unit_name === line.unit.unit_name)
+      changeUnit(selectedKey, units[(i + 1) % units.length])
+    },
+    // F8 — jump into the selected line's discount box.
+    focusDiscount: () => {
+      if (selectedKey == null) return
+      const el = document.querySelector<HTMLInputElement>(`[data-disc="${selectedKey}"]`)
+      el?.focus()
+      el?.select()
+    },
+    // Sale-complete dialog: Enter/Esc starts the next bill, P reprints — the
+    // cashier never has to reach for the mouse between customers.
+    resultOpen: () => saleResult != null,
+    resultNext: () => { if (saleResult) startNewSale() },
+    resultPrint: () => { if (saleResult) printReceipt(saleResult.data, shop) },
+    selectLine: (dir: 1 | -1) => moveSel(dir),
+    adjustLine: (delta: 1 | -1) => adjustSel(delta),
+    removeSelected: () => { if (selectedKey != null) removeItem(selectedKey) },
     // Guard against re-firing behind a blocking modal (would create a duplicate sale).
     complete: () => {
       if (saleResult || showNewCustomer || showHelp) return
@@ -646,17 +723,41 @@ export default function SalesPage() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const k = kbdRef.current
+      const el = document.activeElement
+      const typing = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
+        || el instanceof HTMLSelectElement || (el as HTMLElement | null)?.isContentEditable === true
+
+      // While the "sale complete" dialog is up it owns the keyboard.
+      if (k.resultOpen()) {
+        if (e.key === 'Enter' || e.key === 'Escape' || e.key === 'F9' || e.key === ' ') {
+          e.preventDefault(); k.resultNext()
+        } else if (e.key.toLowerCase() === 'p') {
+          e.preventDefault(); k.resultPrint()
+        }
+        return
+      }
+
       switch (e.key) {
         case 'F1': e.preventDefault(); k.toggleHelp(); break
         case 'F2': e.preventDefault(); k.focusBarcode(); break
         case 'F3': e.preventDefault(); k.openCustomer(); break
         case 'F4': e.preventDefault(); k.focusReceived(); break
+        case 'F5': e.preventDefault(); k.cyclePayment(); break
         case 'F6': e.preventDefault(); k.toggleMode(); break
+        case 'F7': e.preventDefault(); k.cycleUnit(); break
+        case 'F8': e.preventDefault(); k.focusDiscount(); break
         case 'F9': e.preventDefault(); k.complete(); break
         case 'Enter': if (e.ctrlKey) { e.preventDefault(); k.complete() } break
         case 'PageDown': e.preventDefault(); k.cycle(1); break
         case 'PageUp': e.preventDefault(); k.cycle(-1); break
         case 'Escape': k.escape(); break
+        // Cart navigation also works when focus is nowhere in particular, so the
+        // cashier never has to click back into the search box first.
+        case 'ArrowDown': if (!typing) { e.preventDefault(); k.selectLine(1) } break
+        case 'ArrowUp':   if (!typing) { e.preventDefault(); k.selectLine(-1) } break
+        case 'Delete':    if (!typing) { e.preventDefault(); k.removeSelected() } break
+        case '+': case '=': if (!typing) { e.preventDefault(); k.adjustLine(1) } break
+        case '-':           if (!typing) { e.preventDefault(); k.adjustLine(-1) } break
         default:
           if (e.altKey) {
             const key = e.key.toLowerCase()
@@ -671,15 +772,17 @@ export default function SalesPage() {
   }, [])
 
   // ── Search suggestions (live filter from the first character) ──
-  const suggestions = searchQuery.trim().length > 0
+  // The "3*" quantity prefix is stripped first so "3*sug" still finds Sugar.
+  const entry = parseEntry(searchQuery)
+  const suggestions = entry.term.length > 0
     ? products
         .filter(p => {
-          const q = searchQuery.toLowerCase()
+          const q = entry.term.toLowerCase()
           return p.is_active && (
             p.name_en.toLowerCase().includes(q) ||
-            (p.name_ur && p.name_ur.includes(searchQuery)) ||
+            (p.name_ur && p.name_ur.includes(entry.term)) ||
             (p.brand && p.brand.toLowerCase().includes(q)) ||
-            (p.barcode && p.barcode.includes(searchQuery))
+            (p.barcode && p.barcode.includes(entry.term))
           )
         })
         .slice(0, 10)
@@ -787,21 +890,37 @@ export default function SalesPage() {
                   exit={{ opacity: 0, y: -4 }}
                   className="absolute z-30 top-full mt-1 w-full bg-surface border border-line rounded-card shadow-lg overflow-hidden"
                 >
-                  {suggestions.map(p => (
-                    <li key={p.id}>
-                      <button
-                        onMouseDown={() => addProduct(p)}
-                        className="w-full text-start px-3 py-2 text-sm text-ink hover:bg-brand/5 transition-colors flex items-center justify-between gap-2"
-                      >
-                        <span className="font-medium truncate">{p.name_en}</span>
-                        <span className="text-xs text-ink-muted shrink-0">
-                          {p.units?.find(u => u.unit_name === 'piece')
-                            ? formatPKR(getListPrice(p.units.find(u => u.unit_name === 'piece')!, saleMode))
-                            : ''}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
+                  {suggestions.map((p, i) => {
+                    // Price shown is for the unit this mode would actually bill in.
+                    const u = defaultUnitFor(p, saleMode)
+                    const stock = p.stock?.[0]?.quantity_in_base_unit
+                    const low = stock != null && Number(stock) <= Number(p.min_stock_level ?? 0)
+                    return (
+                      <li key={p.id}>
+                        <button
+                          onMouseDown={() => addProduct(p, undefined, entry.qty)}
+                          onMouseEnter={() => setHighlight(i)}
+                          className={cn(
+                            'w-full text-start px-3 py-2 text-sm text-ink transition-colors flex items-center justify-between gap-2',
+                            i === highlight ? 'bg-brand/10' : 'hover:bg-brand/5',
+                          )}
+                        >
+                          <span className="min-w-0">
+                            <span className="font-medium truncate block">{p.name_en}</span>
+                            {stock != null && (
+                              <span className={cn('text-[11px]', low ? 'text-low font-medium' : 'text-ink-muted')}>
+                                {t('pos.inStock')}: {formatQty(Number(stock))} {unitShort(p.base_unit)}
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-xs text-ink-muted shrink-0 tabular-nums text-end">
+                            {formatPKR(getListPrice(u, saleMode))}
+                            <span className="block text-[10px]">/{u.unit_name}</span>
+                          </span>
+                        </button>
+                      </li>
+                    )
+                  })}
                 </motion.ul>
               )}
             </AnimatePresence>
@@ -1045,7 +1164,9 @@ export default function SalesPage() {
                           ) : (
                             <input
                               type="number" min={0} max={discountMax} step={1}
+                              data-disc={line._key}
                               value={line.discount_pct || ''}
+                              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); barcodeRef.current?.focus() } }}
                               onChange={e => changeDiscount(line._key, e.target.value)}
                               placeholder="0"
                               className="w-14 border border-line rounded px-1.5 py-0.5 text-xs text-ink bg-surface focus:outline-none focus:ring-1 focus:ring-brand"
@@ -1198,7 +1319,18 @@ export default function SalesPage() {
                 step={1}
                 value={received}
                 onChange={e => setReceived(e.target.value)}
-                onKeyDown={e => { if (e.key === '*') { e.preventDefault(); setReceived(String(total)) } }}
+                onKeyDown={e => {
+                  // * = exact bill, + = bill + old khata, Enter = finish the sale.
+                  if (e.key === '*') { e.preventDefault(); setReceived(String(total)) }
+                  else if (e.key === '+' && previousBalance > 0) {
+                    e.preventDefault()
+                    setReceived(String(round2(total + previousBalance)))
+                    setExtraToKhata(true)
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault()
+                    if (cart.length && !createSale.isPending && !ruleBlocked) completeSale()
+                  }
+                }}
                 placeholder="0"
                 className="w-full h-9 rounded-input border border-line bg-page px-3 text-base font-semibold tabular-nums text-ink focus:outline-none focus:ring-2 focus:ring-brand"
               />
@@ -1377,6 +1509,30 @@ export default function SalesPage() {
       </div>
       </div>{/* end columns row */}
 
+      {/* ═══ Always-visible key bar — the counter runs on the keyboard ═══ */}
+      <div className="hidden lg:flex items-center gap-4 px-4 py-1.5 border-t border-line bg-surface/80 text-[11px] text-ink-muted shrink-0 overflow-x-auto">
+        {([
+          ['F2', 'pos.kb_search'],
+          ['F3', 'pos.kb_customer'],
+          ['F5', 'pos.kb_payment'],
+          ['F6', 'pos.kb_mode'],
+          ['F7', 'pos.kb_unit'],
+          ['F9', 'pos.kb_complete'],
+        ] as [string, string][]).map(([key, label]) => (
+          <span key={key} className="flex items-center gap-1.5 whitespace-nowrap">
+            <Kbd k={key} />
+            {t(label)}
+          </span>
+        ))}
+        <button
+          onClick={() => setShowHelp(true)}
+          className="ms-auto flex items-center gap-1.5 whitespace-nowrap hover:text-brand transition-colors"
+        >
+          <Kbd k="F1" />
+          {t('pos.shortcuts')}
+        </button>
+      </div>
+
       {/* ═══ Camera scanner overlay ═══ */}
       <AnimatePresence>
         {showCamera && (
@@ -1474,23 +1630,44 @@ export default function SalesPage() {
               <p className="text-ink-muted text-sm mb-5">
                 {t('pos.invoiceNo')}: <strong>{saleResult.data.invoice_no}</strong>
               </p>
+              {/* Change to hand back — the number the cashier needs right now. */}
+              {(saleResult.data.change ?? 0) > 0 && (
+                <div className="mb-3 py-3 px-3 bg-cash/10 rounded-input border border-cash/25">
+                  <div className="text-xs font-semibold text-cash uppercase tracking-wide">{t('pos.change')}</div>
+                  <div className="text-3xl font-bold text-cash tabular-nums">{formatPKR(saleResult.data.change ?? 0)}</div>
+                </div>
+              )}
+              {(saleResult.data.khata_paid ?? 0) > 0 && (
+                <div className="mb-3 py-2 px-3 bg-brand/5 rounded-input border border-brand/20 text-sm text-ink flex items-center justify-between">
+                  <span>{t('pos.paidToKhata')}</span>
+                  <span className="font-semibold tabular-nums">{formatPKR(saleResult.data.khata_paid ?? 0)}</span>
+                </div>
+              )}
               {saleResult.data.due > 0 && (
-                <div className="mb-4 py-2 px-3 bg-due/10 rounded-input border border-due/20 text-due text-sm font-medium">
-                  {t('pos.due')}: {formatPKR(saleResult.data.due)}
+                <div className="mb-3 py-2 px-3 bg-due/10 rounded-input border border-due/20 text-due text-sm font-medium flex items-center justify-between">
+                  <span>{t('pos.due')}</span>
+                  <span className="tabular-nums">{formatPKR(saleResult.data.due)}</span>
+                </div>
+              )}
+              {(saleResult.data.new_balance ?? 0) > 0 && (
+                <div className="mb-4 text-xs text-ink-muted flex items-center justify-between px-1">
+                  <span>{t('pos.newBalance')}</span>
+                  <span className="tabular-nums text-due font-medium">{formatPKR(saleResult.data.new_balance ?? 0)}</span>
                 </div>
               )}
               <div className="flex gap-3">
                 <button
                   onClick={() => printReceipt(saleResult.data, shop)}
-                  className="flex-1 py-2.5 rounded-input border border-line text-ink text-sm font-medium hover:bg-page transition-colors"
+                  className="flex-1 py-2.5 rounded-input border border-line text-ink text-sm font-medium hover:bg-page transition-colors flex items-center justify-center gap-2"
                 >
-                  {t('pos.printReceipt')}
+                  {t('pos.printReceipt')} <Kbd k="P" />
                 </button>
                 <button
+                  autoFocus
                   onClick={startNewSale}
-                  className="flex-1 py-2.5 rounded-input bg-brand text-white text-sm font-bold hover:bg-brand/90 transition-colors"
+                  className="flex-1 py-2.5 rounded-input bg-brand text-white text-sm font-bold hover:bg-brand/90 transition-colors flex items-center justify-center gap-2"
                 >
-                  {t('pos.newSale')}
+                  {t('pos.newSale')} <Kbd k="↵" dark />
                 </button>
               </div>
             </motion.div>

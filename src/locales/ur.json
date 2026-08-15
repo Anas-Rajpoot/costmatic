@@ -183,7 +183,20 @@
     "paidToKhata": "کھاتے میں جمع",
     "previousBalance": "پچھلا بقایا",
     "plusThisBillUdhaar": "+ اس بل کا ادھار",
-    "newBalance": "نیا بقایا"
+    "newBalance": "نیا بقایا",
+    "sc_multiply": "مقدار: 3*چینی سے 3 عدد، صرف 3* سے منتخب لائن کی مقدار",
+    "sc_enterAdd": "منتخب نتیجہ شامل کریں",
+    "sc_payment": "کیش / ادھار / مکس بدلیں",
+    "sc_unit": "منتخب لائن کی اکائی بدلیں",
+    "sc_disc": "منتخب لائن کی رعایت",
+    "sc_billPlusOld": "بل + پرانا بقایا بھریں",
+    "inStock": "اسٹاک",
+    "kb_search": "تلاش",
+    "kb_customer": "گاہک",
+    "kb_payment": "ادائیگی",
+    "kb_mode": "خوردہ/تھوک",
+    "kb_unit": "اکائی",
+    "kb_complete": "مکمل"
   },
   "customers": {
     "title": "گاہک",
