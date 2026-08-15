@@ -5,3 +5,7 @@ dist/
 *.log
 .DS_Store
 Thumbs.db
+
+# Local receipt preview scratch (regenerated on demand, never shipped)
+/preview-receipt.mts
+/public/receipt-*.html
