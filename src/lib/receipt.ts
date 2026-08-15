@@ -36,24 +36,36 @@ export interface ShopInfo {
   widthMm: 58 | 80
 }
 
-export function buildReceiptHtml(data: ReceiptData, shop: ShopInfo) {
-  // Standard POS rolls: 80mm desktop (72mm actual print area) and 58mm mobile
-  // (48mm print area). The side padding is exactly the printer's dead margin,
-  // so the content fills the full printable width without being clipped.
+// Standard POS rolls: 80mm desktop (72mm actual print area) and 58mm mobile
+// (48mm print area). The side padding is exactly the printer's dead margin, so
+// the content fills the full printable width without being clipped. 58mm has
+// only 48mm of print — every size steps down there so nothing wraps.
+function metrics(shop: ShopInfo) {
   const paper = shop.widthMm === 58 ? 58 : 80
   const narrow = paper === 58
-  const pad = narrow ? 5 : 4 // mm each side → 48mm / 72mm of print
-  // 58mm has only 48mm of print — everything steps down a size there so totals
-  // and labels stay on one line instead of wrapping.
-  const px = {
-    body:  narrow ? 11 : 14, // ~3.7mm caps at 203dpi — the size shops print at
-    shop:  narrow ? 13 : 17, // longer shop names still fit on one line
-    sub:   narrow ? 9  : 12,
-    line:  narrow ? 10 : 13,
-    total: narrow ? 14 : 20,
-    khata: narrow ? 12 : 16,
-    urdu:  narrow ? 9  : 12, // Nastaliq reads large for its point size — step it down
+  return {
+    paper,
+    narrow,
+    pad: narrow ? 5 : 4, // mm each side → 48mm / 72mm of print
+    px: {
+      body:  narrow ? 11 : 14, // ~3.7mm caps at 203dpi — the size shops print at
+      shop:  narrow ? 13 : 17, // longer shop names still fit on one line
+      sub:   narrow ? 9  : 12,
+      line:  narrow ? 10 : 13,
+      total: narrow ? 14 : 20,
+      khata: narrow ? 12 : 16,
+      urdu:  narrow ? 9  : 12, // Nastaliq reads large for its point size
+    },
   }
+}
+
+/** Only Arabic-script names get the Nastaliq face; Latin names stay in Inter. */
+function nameClass(name: string) {
+  return /[؀-ۿ]/.test(name) ? 'nm ur' : 'nm'
+}
+
+export function buildReceiptHtml(data: ReceiptData, shop: ShopInfo) {
+  const { paper, narrow, pad, px } = metrics(shop)
 
   // One item = two lines: name + line amount, then quantity and unit price
   // underneath, closed by a dotted rule. No arithmetic on the paper — just the
@@ -63,8 +75,7 @@ export function buildReceiptHtml(data: ReceiptData, shop: ShopInfo) {
     .map(item => {
       const qty = `${escapeHtml(formatQty(item.quantity))} ${escapeHtml(item.unit_name)}`
       const rate = `${formatPKR(item.unit_price)}${item.discount_pct > 0 ? ` -${escapeHtml(item.discount_pct)}%` : ''}`
-      // Only Arabic-script names get the Nastaliq face; Latin names stay in Inter.
-      const nameCls = /[؀-ۿ]/.test(item.product_name) ? 'nm ur' : 'nm'
+      const nameCls = nameClass(item.product_name)
       return `
       <tr><td class="${nameCls}">${escapeHtml(item.product_name)}</td><td class="r nm">${formatPKR(item.line_total)}</td></tr>
       <tr><td class="ln sep">${qty}</td><td class="ln r sep">${rate}</td></tr>`
@@ -148,12 +159,114 @@ ${data.new_balance != null && ((data.previous_balance ?? 0) > 0 || data.due > 0)
 }
 
 
-// Print through a hidden iframe rather than a popup window: the receipt is
-// printed automatically right after the sale RPC resolves, and by then the
-// browser no longer treats window.open() as user-initiated (popup blocked).
-export function printReceipt(data: ReceiptData, shop: ShopInfo) {
-  const html = buildReceiptHtml(data, shop)
+// ── Return (wapsi) slip ───────────────────────────────────────────────────────
 
+export interface ReturnReceiptData {
+  return_no: string
+  invoice_no: string
+  date: string
+  customer_name: string | null
+  items: {
+    product_name: string
+    unit_name: string
+    quantity: number
+    unit_price: number
+    line_total: number
+  }[]
+  total: number
+  refund_mode: 'cash' | 'khata'
+  /** Customer's balance after a khata refund (omitted for cash). */
+  new_balance?: number
+}
+
+/**
+ * The return slip mirrors the sales receipt so the two read as one system, but
+ * says RETURN across the top and states how the refund was settled — cash out
+ * of the drawer, or credit on the khata.
+ */
+export function buildReturnHtml(data: ReturnReceiptData, shop: ShopInfo) {
+  const { paper, narrow, pad, px } = metrics(shop)
+
+  const rows = data.items
+    .map(item => `
+      <tr><td class="${nameClass(item.product_name)}">${escapeHtml(item.product_name)}</td><td class="r nm">${formatPKR(item.line_total)}</td></tr>
+      <tr><td class="ln sep">${escapeHtml(formatQty(item.quantity))} ${escapeHtml(item.unit_name)}</td><td class="ln r sep">${formatPKR(item.unit_price)}</td></tr>`)
+    .join('')
+
+  const printedAt = new Date()
+  const dateStr = new Date(data.date).toLocaleDateString('en-PK')
+  const timeStr = printedAt.toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' })
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Return ${data.return_no}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet">
+<style>
+@page{size:${paper}mm auto;margin:0}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:${paper}mm;background:#fff}
+body{font-family:'Inter',system-ui,'Segoe UI',Roboto,Arial,sans-serif;font-weight:500;
+  font-size:${px.body}px;line-height:1.45;color:#000;font-variant-numeric:tabular-nums;
+  font-feature-settings:'tnum' 1;
+  padding:4mm ${pad}mm 12mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+h1{font-size:${px.shop}px;text-align:center;font-weight:700;line-height:1.2;letter-spacing:.3px}
+.kind{text-align:center;font-weight:700;font-size:${px.khata}px;letter-spacing:2px;
+  border:2px solid #000;padding:2px 0;margin-top:4px}
+.sub{text-align:center;font-size:${px.sub}px;margin-top:1px}
+.meta{font-size:${px.sub}px}
+.rule{border-top:1px solid #000;margin:5px 0}
+.dash{border-top:1px dashed #000;margin:5px 0}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+col.lbl{width:${narrow ? 54 : 62}%}
+col.amt{width:${narrow ? 46 : 38}%}
+td{vertical-align:top;word-wrap:break-word;overflow-wrap:break-word}
+.hd td{font-size:${px.sub}px;font-weight:600;letter-spacing:.6px;border-bottom:1px solid #000;padding-bottom:3px}
+.nm{font-weight:700;padding-top:5px;text-align:left}
+.ln{font-size:${px.line}px;padding-left:${narrow ? 3 : pad}mm;padding-top:3px}
+.sep{border-bottom:1px dotted #666;padding-bottom:4px}
+.r{text-align:right}
+.tot td{padding:2px 0;font-size:${px.line}px}
+.tot tr.big td{font-size:${px.total}px;font-weight:700;padding:4px 0}
+.tot tr.mid td{font-size:${px.khata}px;font-weight:700;padding:3px 0}
+.ft{text-align:center;margin-top:8px;font-size:${px.sub}px}
+.ur{font-family:'Noto Nastaliq Urdu','Jameel Noori Nastaleeq',serif;direction:rtl;unicode-bidi:plaintext;
+  line-height:1.8;font-size:${px.urdu}px}
+</style></head><body>
+<h1>${escapeHtml(shop.name)}</h1>
+${shop.address ? `<div class="sub">${escapeHtml(shop.address)}</div>` : ''}
+<div class="kind">RETURN / واپسی</div>
+<div class="rule"></div>
+<div class="meta">Return: <strong>${escapeHtml(data.return_no)}</strong></div>
+<div class="meta">Against bill: ${escapeHtml(data.invoice_no)}</div>
+<div class="meta">Date: ${escapeHtml(dateStr)} &nbsp; ${escapeHtml(timeStr)}</div>
+${data.customer_name ? `<div class="meta">Customer: <strong>${escapeHtml(data.customer_name)}</strong></div>` : ''}
+<div class="dash"></div>
+<table><colgroup><col class="lbl"><col class="amt"></colgroup>
+  <tr class="hd"><td>RETURNED ITEM</td><td class="r">AMOUNT</td></tr>${rows}</table>
+<table class="tot"><colgroup><col class="lbl"><col class="amt"></colgroup>
+  <tr class="big"><td>REFUND</td><td class="r">${formatPKR(data.total)}</td></tr>
+  <tr><td>${data.refund_mode === 'cash' ? 'Cash returned' : 'Credited to khata'}</td><td class="r">${formatPKR(data.total)}</td></tr>
+  ${data.refund_mode === 'khata' && data.new_balance != null
+    ? `<tr class="mid"><td>Balance Due</td><td class="r">${formatPKR(data.new_balance)}</td></tr>` : ''}
+</table>
+<div class="rule"></div>
+<div class="ft">${escapeHtml(shop.footer)}</div>
+</body></html>`
+}
+
+// Print through a hidden iframe rather than a popup window: the receipt is
+// printed automatically right after the RPC resolves, and by then the browser
+// no longer treats window.open() as user-initiated (popup blocked).
+export function printReceipt(data: ReceiptData, shop: ShopInfo) {
+  printHtml(buildReceiptHtml(data, shop))
+}
+
+export function printReturn(data: ReturnReceiptData, shop: ShopInfo) {
+  printHtml(buildReturnHtml(data, shop))
+}
+
+function printHtml(html: string) {
   const frame = document.createElement('iframe')
   frame.setAttribute('aria-hidden', 'true')
   frame.style.cssText = 'position:fixed;inset-inline-end:0;bottom:0;width:0;height:0;border:0;visibility:hidden'

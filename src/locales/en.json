@@ -34,7 +34,8 @@
     "edit": "Edit",
     "add": "Add",
     "delete": "Delete",
-    "confirm": "Confirm"
+    "confirm": "Confirm",
+    "close": "Close"
   },
   "sync": {
     "title": "Sync Status",
@@ -196,7 +197,9 @@
     "kb_payment": "Payment",
     "kb_mode": "Retail/Wholesale",
     "kb_unit": "Unit",
-    "kb_complete": "Complete"
+    "kb_complete": "Complete",
+    "sc_return": "Return goods (wapsi)",
+    "returnBtn": "Return (Wapsi)"
   },
   "customers": {
     "title": "Customers",
@@ -413,5 +416,31 @@
     "deactivate": "Deactivate",
     "activate": "Activate",
     "deleteConfirm": "Delete this user permanently?"
+  },
+  "returns": {
+    "title": "Return (Wapsi)",
+    "findBill": "Find the original bill",
+    "invoicePlaceholder": "Invoice no. — e.g. INV-2026-0034 or just 34",
+    "find": "Find",
+    "notFound": "No bill found with that number.",
+    "item": "Item",
+    "sold": "Sold",
+    "returnQty": "Return",
+    "refund": "Refund",
+    "max": "max {{qty}}",
+    "alreadyReturned": "{{qty}} already returned",
+    "returnAll": "Return everything on this bill",
+    "refundMode": "How is the refund settled?",
+    "cash": "Cash from drawer",
+    "khata": "Credit to khata",
+    "walkInCashOnly": "A walk-in sale can only be refunded in cash",
+    "khataHint": "{{name}}: balance {{from}} → {{to}}",
+    "notePlaceholder": "Reason (optional) — e.g. wrong item, damaged",
+    "refundTotal": "Refund total",
+    "confirm": "Confirm Return",
+    "done": "Return recorded",
+    "cashReturned": "Cash returned",
+    "creditedToKhata": "Credited to khata",
+    "printSlip": "Print slip"
   }
 }

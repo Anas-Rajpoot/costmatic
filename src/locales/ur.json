@@ -34,7 +34,8 @@
     "edit": "ترمیم",
     "add": "شامل کریں",
     "delete": "حذف کریں",
-    "confirm": "تصدیق کریں"
+    "confirm": "تصدیق کریں",
+    "close": "بند کریں"
   },
   "sync": {
     "title": "سنک اسٹیٹس",
@@ -196,7 +197,9 @@
     "kb_payment": "ادائیگی",
     "kb_mode": "خوردہ/تھوک",
     "kb_unit": "اکائی",
-    "kb_complete": "مکمل"
+    "kb_complete": "مکمل",
+    "sc_return": "مال واپسی",
+    "returnBtn": "واپسی"
   },
   "customers": {
     "title": "گاہک",
@@ -413,5 +416,31 @@
     "deactivate": "غیر فعال کریں",
     "activate": "فعال کریں",
     "deleteConfirm": "اس صارف کو مستقل حذف کریں؟"
+  },
+  "returns": {
+    "title": "واپسی",
+    "findBill": "اصل بل تلاش کریں",
+    "invoicePlaceholder": "انوائس نمبر — مثلاً INV-2026-0034 یا صرف 34",
+    "find": "تلاش",
+    "notFound": "اس نمبر کا کوئی بل نہیں ملا۔",
+    "item": "آئٹم",
+    "sold": "فروخت",
+    "returnQty": "واپسی",
+    "refund": "رقم",
+    "max": "زیادہ سے زیادہ {{qty}}",
+    "alreadyReturned": "{{qty}} پہلے واپس ہو چکا",
+    "returnAll": "پورا بل واپس کریں",
+    "refundMode": "رقم کیسے واپس ہوگی؟",
+    "cash": "نقد واپسی",
+    "khata": "کھاتے میں جمع",
+    "walkInCashOnly": "واک ان سیل کی واپسی صرف نقد ہو سکتی ہے",
+    "khataHint": "{{name}}: بقایا {{from}} ← {{to}}",
+    "notePlaceholder": "وجہ (اختیاری) — مثلاً غلط آئٹم، خراب",
+    "refundTotal": "کل واپسی",
+    "confirm": "واپسی مکمل کریں",
+    "done": "واپسی درج ہو گئی",
+    "cashReturned": "نقد واپس",
+    "creditedToKhata": "کھاتے میں جمع",
+    "printSlip": "سلپ پرنٹ کریں"
   }
 }

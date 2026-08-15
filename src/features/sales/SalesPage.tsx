@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Camera, Trash2, Plus, Minus, ChevronDown, CheckCircle2, User, X, Printer, Keyboard } from 'lucide-react'
+import { Camera, Trash2, Plus, Minus, ChevronDown, CheckCircle2, User, X, Printer, Keyboard, RotateCcw } from 'lucide-react'
 import { useProducts } from '@/features/products/hooks/useProducts'
 import { useCustomers, useCreateCustomer } from './hooks/useCustomers'
 import { useCreateSale, useRecentSales, type RecentSale } from './hooks/useSales'
@@ -18,6 +18,7 @@ import { parseEntry } from '@/lib/posEntry'
 import { cn } from '@/lib/utils'
 import type { Product, ProductUnit, Customer } from '@/types'
 import CameraScanner from './components/CameraScanner'
+import ReturnDialog from './components/ReturnDialog'
 
 interface CartLine {
   _key: number
@@ -82,6 +83,7 @@ const SHORTCUTS: [string, string][] = [
   ['F7', 'pos.sc_unit'],
   ['F8', 'pos.sc_disc'],
   ['F9 / Ctrl+Enter', 'pos.sc_complete'],
+  ['F10', 'pos.sc_return'],
   ['PgUp / PgDn', 'pos.sc_cycle'],
   ['↑ / ↓', 'pos.sc_navline'],
   ['+ / −', 'pos.sc_qty'],
@@ -150,6 +152,7 @@ export default function SalesPage() {
   const customerBtnRef = useRef<HTMLButtonElement>(null)
   const [scanError, setScanError] = useState('')
   const [showCamera, setShowCamera] = useState(false)
+  const [showReturn, setShowReturn] = useState(false)
   const [highlight, setHighlight] = useState(0) // keyboard-selected suggestion
 
   // ── Keyboard ──
@@ -653,6 +656,7 @@ export default function SalesPage() {
   }
 
   function onEscape() {
+    if (showReturn) { setShowReturn(false); return }
     if (showHelp) { setShowHelp(false); return }
     if (showCamera) { setShowCamera(false); return }
     if (showCustomerDrop) { setShowCustomerDrop(false); return }
@@ -695,6 +699,7 @@ export default function SalesPage() {
     resultOpen: () => saleResult != null,
     resultNext: () => { if (saleResult) startNewSale() },
     resultPrint: () => { if (saleResult) printReceipt(saleResult.data, shop) },
+    openReturn: () => setShowReturn(true),
     selectLine: (dir: 1 | -1) => moveSel(dir),
     adjustLine: (delta: 1 | -1) => adjustSel(delta),
     removeSelected: () => { if (selectedKey != null) removeItem(selectedKey) },
@@ -747,6 +752,7 @@ export default function SalesPage() {
         case 'F7': e.preventDefault(); k.cycleUnit(); break
         case 'F8': e.preventDefault(); k.focusDiscount(); break
         case 'F9': e.preventDefault(); k.complete(); break
+        case 'F10': e.preventDefault(); k.openReturn(); break
         case 'Enter': if (e.ctrlKey) { e.preventDefault(); k.complete() } break
         case 'PageDown': e.preventDefault(); k.cycle(1); break
         case 'PageUp': e.preventDefault(); k.cycle(-1); break
@@ -932,6 +938,15 @@ export default function SalesPage() {
           >
             <Camera size={16} />
             <span className="hidden sm:inline">{t('pos.scanCamera')}</span>
+          </button>
+          <button
+            onClick={() => setShowReturn(true)}
+            title={t('returns.title')}
+            className="h-10 px-3 rounded-input border border-line bg-surface text-ink-muted hover:text-due hover:border-due transition-colors flex items-center gap-1.5 text-sm"
+          >
+            <RotateCcw size={16} />
+            <span className="hidden sm:inline">{t('pos.returnBtn')}</span>
+            <Kbd k="F10" />
           </button>
           <button
             onClick={() => setShowHelp(true)}
@@ -1518,6 +1533,7 @@ export default function SalesPage() {
           ['F6', 'pos.kb_mode'],
           ['F7', 'pos.kb_unit'],
           ['F9', 'pos.kb_complete'],
+          ['F10', 'pos.returnBtn'],
         ] as [string, string][]).map(([key, label]) => (
           <span key={key} className="flex items-center gap-1.5 whitespace-nowrap">
             <Kbd k={key} />
@@ -1532,6 +1548,13 @@ export default function SalesPage() {
           {t('pos.shortcuts')}
         </button>
       </div>
+
+      {/* ═══ Return (wapsi) ═══ */}
+      <AnimatePresence>
+        {showReturn && (
+          <ReturnDialog shop={shop} onClose={() => { setShowReturn(false); refocusBarcode() }} />
+        )}
+      </AnimatePresence>
 
       {/* ═══ Camera scanner overlay ═══ */}
       <AnimatePresence>
