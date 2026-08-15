@@ -10,7 +10,7 @@ import { useAuth } from '@/features/auth/AuthContext'
 import { get, set } from 'idb-keyval'
 import { formatPKR, formatQty, round2, unitShort } from '@/lib/format'
 import { computeLine, computeAmountLine, getListPrice, type SaleMode } from '@/lib/pricing'
-import { escapeHtml } from '@/lib/escapeHtml'
+import { printReceipt, type ReceiptData, type ShopInfo } from '@/lib/receipt'
 import { cn } from '@/lib/utils'
 import type { Product, ProductUnit, Customer } from '@/types'
 import CameraScanner from './components/CameraScanner'
@@ -74,9 +74,12 @@ interface SaleTab {
   saleMode: SaleMode
   paymentType: 'cash' | 'udhaar' | 'mixed'
   received: string
+  // Customer handed over more than this bill and has an old balance: put the
+  // extra on the khata (true) or return it as change (false, the default).
+  extraToKhata?: boolean
 }
 function freshTab(): SaleTab {
-  return { id: crypto.randomUUID(), cart: [], customer: null, saleMode: 'retail', paymentType: 'cash', received: '' }
+  return { id: crypto.randomUUID(), cart: [], customer: null, saleMode: 'retail', paymentType: 'cash', received: '', extraToKhata: false }
 }
 const MAX_TABS = 6
 const PARKED_KEY = 'costmatic_parked_sales'
@@ -112,122 +115,10 @@ const SHORTCUTS: [string, string][] = [
   ['F1', 'pos.sc_help'],
 ]
 
-interface ReceiptData {
-  invoice_no: string
-  date: string
-  customer_name: string | null
-  items: {
-    product_name: string
-    unit_name: string
-    quantity: number
-    unit_price: number
-    discount_pct: number
-    line_total: number
-  }[]
-  subtotal: number
-  total: number
-  paid: number
-  due: number
-  tendered?: number
-  change?: number
-  // Khata (running account) — only for a named customer with a balance:
-  previous_balance?: number // owed before this sale
-  new_balance?: number      // owed after this sale (previous + this bill's udhaar)
-}
 
 // Pricing/qty math (getListPrice, computeLine, computeAmountLine, SaleMode) lives in
 // @/lib/pricing; numeric helpers (round2, formatQty) in @/lib/format — both unit-tested.
 
-interface ShopInfo {
-  name: string
-  address: string
-  phone: string
-  footer: string
-}
-
-function openReceiptWindow(data: ReceiptData, shop: ShopInfo) {
-  const rows = data.items
-    .map(
-      item => `
-      <tr>
-        <td class="ur">${escapeHtml(item.product_name)}</td>
-        <td style="text-align:center">${escapeHtml(formatQty(item.quantity))}&nbsp;${escapeHtml(item.unit_name)}</td>
-        <td style="text-align:right">${formatPKR(item.unit_price)}</td>
-        <td style="text-align:center">${item.discount_pct > 0 ? escapeHtml(item.discount_pct) + '%' : ''}</td>
-        <td style="text-align:right">${formatPKR(item.line_total)}</td>
-      </tr>`,
-    )
-    .join('')
-
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>Receipt ${data.invoice_no}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Courier New',monospace;font-size:12px;padding:8mm}
-h1{font-size:16px;text-align:center;margin-bottom:2px}
-.sub{text-align:center;font-size:10px;color:#555;margin-bottom:6px}
-.div{border-top:1px dashed #000;margin:5px 0}
-table{width:100%;border-collapse:collapse}
-th{border-bottom:1px solid #000;padding:2px 3px;font-size:11px}
-td{padding:2px 3px;vertical-align:top}
-.r{text-align:right}.c{text-align:center}
-.tot td{padding:1px 3px}
-.bold{font-weight:bold}
-.due{color:#D33A4F;font-weight:bold}
-.ft{text-align:center;margin-top:8px;font-size:10px;color:#555}
-.ur{font-family:'Noto Nastaliq Urdu','Jameel Noori Nastaleeq',serif;direction:rtl;unicode-bidi:plaintext;line-height:1.8;font-size:11px}
-</style></head><body>
-<h1>${escapeHtml(shop.name)}</h1>
-${shop.address ? `<div class="sub">${escapeHtml(shop.address)}</div>` : ''}
-${shop.phone ? `<div class="sub">Ph: ${escapeHtml(shop.phone)}</div>` : ''}
-<div class="div"></div>
-<div>Invoice: <strong>${escapeHtml(data.invoice_no)}</strong> &nbsp; Date: ${escapeHtml(new Date(data.date).toLocaleDateString('en-PK'))}</div>
-${data.customer_name ? `<div>Customer: <strong>${escapeHtml(data.customer_name)}</strong></div>` : ''}
-<div class="div"></div>
-<table><thead><tr>
-  <th>Item</th><th class="c">Qty</th><th class="r">Rate</th><th class="c">Disc</th><th class="r">Amt</th>
-</tr></thead><tbody>${rows}</tbody></table>
-<div class="div"></div>
-<table class="tot">
-  <tr class="bold"><td>TOTAL</td><td class="r">${formatPKR(data.total)}</td></tr>
-  ${data.tendered != null ? `<tr><td>Received (Cash)</td><td class="r">${formatPKR(data.tendered)}</td></tr>` : ''}
-  ${data.change != null ? `<tr class="bold"><td>Change Returned</td><td class="r">${formatPKR(data.change)}</td></tr>` : ''}
-  <tr><td>Paid</td><td class="r">${formatPKR(data.paid)}</td></tr>
-  ${data.due > 0 ? `<tr class="due"><td>Udhaar (This Bill)</td><td class="r">${formatPKR(data.due)}</td></tr>` : ''}
-</table>
-${data.new_balance != null && ((data.previous_balance ?? 0) > 0 || data.due > 0) ? `
-<div class="div"></div>
-<div style="font-size:10px;color:#555;margin-bottom:3px;font-weight:bold">Account (Khata)</div>
-<table class="tot">
-  <tr><td>Previous Balance</td><td class="r">${formatPKR(data.previous_balance ?? 0)}</td></tr>
-  ${data.due > 0 ? `<tr><td>+ This Bill Udhaar</td><td class="r">${formatPKR(data.due)}</td></tr>` : ''}
-  <tr class="bold due"><td>Total Balance Due</td><td class="r">${formatPKR(data.new_balance)}</td></tr>
-</table>` : ''}
-<div class="div"></div>
-<div class="ft">${escapeHtml(shop.footer)}</div>
-</body></html>`
-
-  const w = window.open('', '_blank', 'width=420,height=620')
-  if (w) {
-    w.document.write(html)
-    w.document.close()
-    w.focus()
-    // Wait for the Nastaliq web font so the Urdu names render correctly on the
-    // first print; fall back to a fixed delay if the Font Loading API is absent
-    // or never resolves (e.g. offline). Print exactly once.
-    let printed = false
-    const doPrint = () => { if (!printed) { printed = true; w.print() } }
-    if (w.document.fonts?.ready) {
-      w.document.fonts.ready.then(() => setTimeout(doPrint, 150))
-      setTimeout(doPrint, 1500) // safety net
-    } else {
-      setTimeout(doPrint, 600)
-    }
-  }
-}
 
 export default function SalesPage() {
   const { t } = useTranslation()
@@ -246,6 +137,7 @@ export default function SalesPage() {
     address: settings.shop_address || '',
     phone: settings.shop_phone || '',
     footer: settings.receipt_footer || 'Thank you for your business!',
+    widthMm: settings.receipt_width === '58' ? 58 : 80,
   }
 
   // ── Sale tabs (parked / parallel sales) ──
@@ -298,6 +190,7 @@ export default function SalesPage() {
   const received = active.received
   const setPaymentType = (p: 'cash' | 'udhaar' | 'mixed') => patchActive(() => ({ paymentType: p }))
   const setReceived = (r: string) => patchActive(() => ({ received: r }))
+  const setExtraToKhata = (v: boolean) => patchActive(() => ({ extraToKhata: v }))
 
   // ── Sale result ──
   const [saleResult, setSaleResult] = useState<{ data: ReceiptData } | null>(null)
@@ -373,8 +266,20 @@ export default function SalesPage() {
     : paymentType === 'udhaar' ? 0
     : Math.min(receivedNum, total) // mixed: cash portion, rest is udhaar
   const due = total - cashPaid
-  // Change is only returned when more cash than the bill was handed over.
-  const changeDue = paymentType === 'udhaar' ? 0 : Math.max(0, receivedNum - total)
+
+  // ── Old khata (running account) ──
+  // What this customer already owed before this bill.
+  const previousBalance = customer ? Math.max(Number(customer.current_balance) || 0, 0) : 0
+  // Cash handed over above this bill: either returned as change, or (when the
+  // customer has an old balance) put on the khata — the cashier picks.
+  const extraCash = paymentType === 'udhaar' ? 0 : Math.max(0, receivedNum - total)
+  const canApplyExtra = previousBalance > 0 && extraCash > 0
+  const applyExtraToKhata = canApplyExtra && !!active.extraToKhata
+  // Never pay more than is owed — the server clamps this again.
+  const khataPayment = applyExtraToKhata ? Math.min(extraCash, previousBalance) : 0
+  const changeDue = extraCash - khataPayment
+  // Balance the customer walks out with: old + this bill's udhaar − khata payment.
+  const newBalance = previousBalance + due - khataPayment
 
   // ── Retail/Wholesale rule violations (client preview; server also enforces) ──
   const isAdmin = profile?.role === 'admin'
@@ -565,6 +470,8 @@ export default function SalesPage() {
   // ── Customer selection ──
   function selectCustomer(c: Customer | null) {
     setCustomer(c)
+    // The khata choice belongs to the previous customer — start fresh.
+    setExtraToKhata(false)
     setShowCustomerDrop(false)
     setCustomerSearch('')
     // Auto-match the price mode to the customer's type (shopkeeper can still override)
@@ -615,6 +522,7 @@ export default function SalesPage() {
       sale_type: saleMode,
       created_by: session!.user.id,
       allow_override: isAdmin && allowOverride,
+      khata_payment: khataPayment,
       items: cart.map(l => ({
         product_id: l.product.id,
         unit_name: l.unit.unit_name,
@@ -646,20 +554,25 @@ export default function SalesPage() {
       due,
       tendered: paymentType !== 'udhaar' && receivedNum > 0 ? receivedNum : undefined,
       change: changeDue > 0 ? changeDue : undefined,
-      // Khata: the customer's balance before this sale + this bill's udhaar.
+      // Khata: balance before this sale, + this bill's udhaar, − any extra cash
+      // the customer put on the old account.
       ...(customer
         ? {
-            previous_balance: Number(customer.current_balance) || 0,
-            new_balance: (Number(customer.current_balance) || 0) + due,
+            previous_balance: previousBalance,
+            khata_paid: khataPayment > 0 ? khataPayment : undefined,
+            new_balance: newBalance,
           }
         : {}),
     }
     setSaleResult({ data: receiptData })
+    // Always print — the shop hands a receipt over with every sale. The dialog's
+    // "Print Receipt" button stays available for a second copy.
+    printReceipt(receiptData, shop)
   }
 
   function startNewSale() {
     // Clear the active tab (keep its sale mode + any other parked tabs).
-    patchActive(() => ({ cart: [], customer: null, paymentType: 'cash', received: '' }))
+    patchActive(() => ({ cart: [], customer: null, paymentType: 'cash', received: '', extraToKhata: false }))
     setScanError('')
     setSaleResult(null)
     setSelectedKey(null)
@@ -669,7 +582,7 @@ export default function SalesPage() {
 
   // Re-print the receipt of a previous sale (e.g. if printing was missed)
   function reprintSale(sale: RecentSale) {
-    openReceiptWindow({
+    printReceipt({
       invoice_no: sale.invoice_no,
       date: sale.date,
       customer_name: sale.customer?.name ?? null,
@@ -1330,7 +1243,57 @@ export default function SalesPage() {
                 >
                   {t('pos.exact')}
                 </button>
+                {/* Bill + everything the customer already owes, straight onto the khata */}
+                {previousBalance > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setReceived(String(round2(total + previousBalance))); setExtraToKhata(true) }}
+                    className="h-7 px-2.5 rounded-btn border border-due text-xs text-due font-medium hover:bg-due/5 transition-colors tabular-nums"
+                  >
+                    {t('pos.billPlusOld')} {formatPKR(round2(total + previousBalance))}
+                  </button>
+                )}
               </div>
+
+              {/* Extra cash over the bill: return it, or settle the old khata with it */}
+              {canApplyExtra && (
+                <div className="mt-2 rounded-input border border-line bg-page p-2 flex flex-col gap-1.5">
+                  <div className="text-xs text-ink-muted">
+                    {t('pos.extraCash', { amount: formatPKR(extraCash) })}
+                  </div>
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setExtraToKhata(false)}
+                      className={`py-1.5 rounded-input text-xs font-semibold border transition-colors ${
+                        applyExtraToKhata
+                          ? 'bg-surface border-line text-ink hover:border-brand'
+                          : 'bg-cash text-white border-cash'
+                      }`}
+                    >
+                      {t('pos.returnExtra')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExtraToKhata(true)}
+                      className={`py-1.5 rounded-input text-xs font-semibold border transition-colors ${
+                        applyExtraToKhata
+                          ? 'bg-due text-white border-due'
+                          : 'bg-surface border-line text-ink hover:border-due'
+                      }`}
+                    >
+                      {t('pos.extraToKhata')}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {khataPayment > 0 && (
+                <div className="mt-2 rounded-input bg-due/10 border border-due/25 px-3 py-2 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-due uppercase tracking-wide">{t('pos.paidToKhata')}</span>
+                  <span className="text-lg font-bold text-due tabular-nums">{formatPKR(khataPayment)}</span>
+                </div>
+              )}
               {changeDue > 0 && (
                 <div className="mt-2 rounded-input bg-cash/10 border border-cash/25 px-3 py-2 flex items-center justify-between">
                   <span className="text-xs font-semibold text-cash uppercase tracking-wide">{t('pos.change')}</span>
@@ -1369,6 +1332,32 @@ export default function SalesPage() {
             <div className="flex items-center justify-between text-sm font-semibold text-due">
               <span>{t('pos.due')}</span>
               <span className="tabular-nums">{formatPKR(due)}</span>
+            </div>
+          )}
+
+          {/* Khata (running account): what was owed before this bill, and after it */}
+          {customer && (previousBalance > 0 || khataPayment > 0) && (
+            <div className="mt-2 pt-2 border-t border-line flex flex-col gap-1">
+              <div className="flex items-center justify-between text-sm text-ink-muted">
+                <span>{t('pos.previousBalance')}</span>
+                <span className="tabular-nums text-due">{formatPKR(previousBalance)}</span>
+              </div>
+              {due > 0 && (
+                <div className="flex items-center justify-between text-sm text-ink-muted">
+                  <span>{t('pos.plusThisBillUdhaar')}</span>
+                  <span className="tabular-nums text-due">+{formatPKR(due)}</span>
+                </div>
+              )}
+              {khataPayment > 0 && (
+                <div className="flex items-center justify-between text-sm text-cash">
+                  <span>{t('pos.paidToKhata')}</span>
+                  <span className="tabular-nums">-{formatPKR(khataPayment)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between font-bold text-base text-due">
+                <span>{t('pos.newBalance')}</span>
+                <span className="tabular-nums">{formatPKR(newBalance)}</span>
+              </div>
             </div>
           )}
         </div>
@@ -1515,7 +1504,7 @@ export default function SalesPage() {
               )}
               <div className="flex gap-3">
                 <button
-                  onClick={() => openReceiptWindow(saleResult.data, shop)}
+                  onClick={() => printReceipt(saleResult.data, shop)}
                   className="flex-1 py-2.5 rounded-input border border-line text-ink text-sm font-medium hover:bg-page transition-colors"
                 >
                   {t('pos.printReceipt')}

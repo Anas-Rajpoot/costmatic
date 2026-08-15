@@ -175,7 +175,15 @@
     "minWholesale": "Min {{qty}} {{unit}}",
     "belowWholesaleMin": "Below the wholesale minimum for one or more items.",
     "wrongModeUnit": "An item's unit isn't allowed in this sale mode.",
-    "overrideLimits": "Override limits (admin)"
+    "overrideLimits": "Override limits (admin)",
+    "billPlusOld": "Bill + Old",
+    "extraCash": "Extra {{amount}} — return it or put it on the old khata?",
+    "returnExtra": "Return",
+    "extraToKhata": "Add to Khata",
+    "paidToKhata": "Paid to Khata",
+    "previousBalance": "Previous Balance",
+    "plusThisBillUdhaar": "+ This Bill Udhaar",
+    "newBalance": "New Balance"
   },
   "customers": {
     "title": "Customers",
@@ -344,6 +352,8 @@
     "taxRate": "Tax / GST Rate (%)",
     "taxNote": "Enter 0 for no tax. Applied to sale totals.",
     "defaultLanguage": "Default Language",
+    "receiptWidth": "Receipt Printer Width",
+    "receiptWidthNote": "Thermal roll width of your POS printer.",
     "save": "Save Settings",
     "saved": "Saved!",
     "labels": {

@@ -175,7 +175,15 @@
     "minWholesale": "کم از کم {{qty}} {{unit}}",
     "belowWholesaleMin": "ایک یا زیادہ آئٹمز تھوک کی کم از کم مقدار سے کم ہیں۔",
     "wrongModeUnit": "کسی آئٹم کی اکائی اس موڈ میں فروخت نہیں ہو سکتی۔",
-    "overrideLimits": "حدود نظرانداز کریں (ایڈمن)"
+    "overrideLimits": "حدود نظرانداز کریں (ایڈمن)",
+    "billPlusOld": "بل + پرانا",
+    "extraCash": "زائد {{amount}} — واپس کریں یا پرانے کھاتے میں جمع کریں؟",
+    "returnExtra": "واپس کریں",
+    "extraToKhata": "کھاتے میں جمع",
+    "paidToKhata": "کھاتے میں جمع",
+    "previousBalance": "پچھلا بقایا",
+    "plusThisBillUdhaar": "+ اس بل کا ادھار",
+    "newBalance": "نیا بقایا"
   },
   "customers": {
     "title": "گاہک",
@@ -344,6 +352,8 @@
     "taxRate": "ٹیکس / جی ایس ٹی (%)",
     "taxNote": "بغیر ٹیکس کے 0 لکھیں۔ فروخت کے کل پر لاگو ہوگا۔",
     "defaultLanguage": "ڈیفالٹ زبان",
+    "receiptWidth": "رسید پرنٹر کی چوڑائی",
+    "receiptWidthNote": "آپ کے پی او ایس تھرمل پرنٹر کے رول کی چوڑائی۔",
     "save": "محفوظ کریں",
     "saved": "محفوظ ہو گیا!",
     "labels": {

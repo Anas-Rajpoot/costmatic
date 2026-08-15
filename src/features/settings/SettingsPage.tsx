@@ -103,12 +103,13 @@ function PreferencesTab() {
   const { data: settings, isLoading } = useSettings()
   const save = useSaveSettings()
   const [saved, setSaved] = useState(false)
-  const [form, setForm] = useState({ tax_rate: '0', default_language: 'en' })
+  const [form, setForm] = useState({ tax_rate: '0', default_language: 'en', receipt_width: '80' })
 
   useEffect(() => {
     if (settings) setForm({
       tax_rate:         settings.tax_rate         ?? '0',
       default_language: settings.default_language ?? 'en',
+      receipt_width:    settings.receipt_width    ?? '80',
     })
   }, [settings])
 
@@ -137,6 +138,14 @@ function PreferencesTab() {
           <option value="en">English</option>
           <option value="ur">اردو</option>
         </select>
+      </Field>
+      <Field label={t('settings.receiptWidth')}>
+        <select className="input w-48" value={form.receipt_width}
+          onChange={e => setForm(f => ({ ...f, receipt_width: e.target.value }))}>
+          <option value="80">80 mm</option>
+          <option value="58">58 mm</option>
+        </select>
+        <p className="text-xs text-ink-muted mt-1">{t('settings.receiptWidthNote')}</p>
       </Field>
       <SaveBtn saving={save.isPending} saved={saved} onSave={handleSave} />
     </div>

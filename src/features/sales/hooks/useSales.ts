@@ -76,6 +76,9 @@ export interface CreateSaleInput {
   // Admin-only: bypass retail/wholesale eligibility + loose wholesale-minimum.
   // Honoured server-side only when the caller is an admin.
   allow_override?: boolean
+  // Extra cash (over this bill) the customer wants put on their old khata
+  // instead of taken back as change. Clamped server-side to what is owed.
+  khata_payment?: number
   items: SaleItemInput[]
 }
 
@@ -101,7 +104,7 @@ export function useCreateSale() {
           sale_id: clientId,
           invoice_no: `OFFLINE-${input.date}-${seq}`,
           offline: true,
-        } as { sale_id: string; invoice_no: string; offline?: boolean }
+        } as { sale_id: string; invoice_no: string; offline?: boolean; khata_paid?: number }
       }
 
       const { data, error } = await supabase.rpc('create_sale', {
@@ -119,9 +122,10 @@ export function useCreateSale() {
         p_client_id:    clientId,
         p_sale_type:    input.sale_type,
         p_allow_override: input.allow_override ?? false,
+        p_khata_payment: input.khata_payment ?? 0,
       })
       if (error) throw error
-      return data as { sale_id: string; invoice_no: string }
+      return data as { sale_id: string; invoice_no: string; khata_paid?: number }
     },
     onSuccess: () => {
       if (isOnline) {
