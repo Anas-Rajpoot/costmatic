@@ -63,8 +63,10 @@ export function buildReceiptHtml(data: ReceiptData, shop: ShopInfo) {
     .map(item => {
       const qty = `${escapeHtml(formatQty(item.quantity))} ${escapeHtml(item.unit_name)}`
       const rate = `${formatPKR(item.unit_price)}${item.discount_pct > 0 ? ` -${escapeHtml(item.discount_pct)}%` : ''}`
+      // Only Arabic-script names get the Nastaliq face; Latin names stay in Inter.
+      const nameCls = /[؀-ۿ]/.test(item.product_name) ? 'nm ur' : 'nm'
       return `
-      <tr><td class="nm ur">${escapeHtml(item.product_name)}</td><td class="r nm">${formatPKR(item.line_total)}</td></tr>
+      <tr><td class="${nameCls}">${escapeHtml(item.product_name)}</td><td class="r nm">${formatPKR(item.line_total)}</td></tr>
       <tr><td class="ln sep">${qty}</td><td class="ln r sep">${rate}</td></tr>`
     })
     .join('')
@@ -77,14 +79,19 @@ export function buildReceiptHtml(data: ReceiptData, shop: ShopInfo) {
 <title>Receipt ${data.invoice_no}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet">
 <style>
 @page{size:${paper}mm auto;margin:0}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:${paper}mm;background:#fff}
-body{font-family:'Courier New','Consolas',monospace;font-size:${px.body}px;line-height:1.4;color:#000;
+/* Inter, not a typewriter face: it stays crisp at 203dpi and prints solid at
+   weight 500+. Tabular figures keep every amount in one straight column, which
+   is the only thing monospace was buying us. */
+body{font-family:'Inter',system-ui,'Segoe UI',Roboto,Arial,sans-serif;font-weight:500;
+  font-size:${px.body}px;line-height:1.45;color:#000;font-variant-numeric:tabular-nums;
+  font-feature-settings:'tnum' 1;
   padding:4mm ${pad}mm 12mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-h1{font-size:${px.shop}px;text-align:center;font-weight:bold;line-height:1.15;letter-spacing:.5px}
+h1{font-size:${px.shop}px;text-align:center;font-weight:700;line-height:1.2;letter-spacing:.3px}
 .sub{text-align:center;font-size:${px.sub}px;margin-top:1px}
 .meta{font-size:${px.sub}px}
 .rule{border-top:1px solid #000;margin:5px 0}
@@ -93,16 +100,16 @@ table{width:100%;border-collapse:collapse;table-layout:fixed}
 col.lbl{width:${narrow ? 54 : 62}%}
 col.amt{width:${narrow ? 46 : 38}%}
 td{vertical-align:top;word-wrap:break-word;overflow-wrap:break-word}
-.hd td{font-size:${px.sub}px;font-weight:bold;border-bottom:1px solid #000;padding-bottom:3px}
-.nm{font-weight:bold;padding-top:5px;text-align:left}
+.hd td{font-size:${px.sub}px;font-weight:600;letter-spacing:.6px;border-bottom:1px solid #000;padding-bottom:3px}
+.nm{font-weight:700;padding-top:5px;text-align:left}
 .ln{font-size:${px.line}px;padding-left:${narrow ? 3 : pad}mm;padding-top:3px}
 .sep{border-bottom:1px dotted #666;padding-bottom:4px}
 .r{text-align:right}
-.bold{font-weight:bold}
+.bold{font-weight:700}
 .tot td{padding:2px 0;font-size:${px.line}px}
-.tot tr.big td{font-size:${px.total}px;font-weight:bold;padding:4px 0}
-.tot tr.mid td{font-size:${px.khata}px;font-weight:bold;padding:3px 0}
-.sect{font-weight:bold;font-size:${px.sub}px;margin-bottom:2px}
+.tot tr.big td{font-size:${px.total}px;font-weight:700;letter-spacing:.2px;padding:4px 0}
+.tot tr.mid td{font-size:${px.khata}px;font-weight:700;padding:3px 0}
+.sect{font-weight:600;letter-spacing:.6px;font-size:${px.sub}px;margin-bottom:2px}
 .ft{text-align:center;margin-top:8px;font-size:${px.sub}px}
 .ur{font-family:'Noto Nastaliq Urdu','Jameel Noori Nastaleeq',serif;direction:rtl;unicode-bidi:plaintext;
   line-height:1.8;font-size:${px.urdu}px}
