@@ -36,32 +36,42 @@ export interface ShopInfo {
   widthMm: 58 | 80
 }
 
-// Receipt laid out for a thermal POS printer: fixed roll width, auto page height,
-// zero page margin (that also drops Chrome's date/URL header+footer), monochrome
-// (thermal heads print colour as muddy grey, so emphasis is weight, not colour),
-// and one item per two lines so long Urdu names never squash the amount column.
 export function buildReceiptHtml(data: ReceiptData, shop: ShopInfo) {
-  const w = shop.widthMm === 58 ? 58 : 80
-  const narrow = w === 58
+  // Standard POS rolls: 80mm desktop (72mm actual print area) and 58mm mobile
+  // (48mm print area). The side padding is exactly the printer's dead margin,
+  // so the content fills the full printable width without being clipped.
+  const paper = shop.widthMm === 58 ? 58 : 80
+  const narrow = paper === 58
+  const pad = narrow ? 5 : 4 // mm each side → 48mm / 72mm of print
+  // 58mm has only 48mm of print — everything steps down a size there so totals
+  // and labels stay on one line instead of wrapping.
   const px = {
-    body:  narrow ? 10 : 12,
-    shop:  narrow ? 13 : 16,
-    small: narrow ? 9  : 10,
-    line:  narrow ? 9  : 11,
-    total: narrow ? 13 : 15,
+    body:  narrow ? 11 : 14, // ~3.7mm caps at 203dpi — the size shops print at
+    shop:  narrow ? 13 : 17, // longer shop names still fit on one line
+    sub:   narrow ? 9  : 12,
+    line:  narrow ? 10 : 13,
+    total: narrow ? 14 : 20,
+    khata: narrow ? 12 : 16,
+    urdu:  narrow ? 9  : 12, // Nastaliq reads large for its point size — step it down
   }
 
+  // One item = two lines: name + line amount, then quantity and unit price
+  // underneath, closed by a dotted rule. No arithmetic on the paper — just the
+  // name, how many, and the rate. Names all start at the same left edge and
+  // every amount lands in one right-hand column.
   const rows = data.items
     .map(item => {
-      const qtyLine = `${escapeHtml(formatQty(item.quantity))} ${escapeHtml(item.unit_name)} × ${formatPKR(item.unit_price)}`
-      const disc = item.discount_pct > 0 ? `  (-${escapeHtml(item.discount_pct)}%)` : ''
+      const qty = `${escapeHtml(formatQty(item.quantity))} ${escapeHtml(item.unit_name)}`
+      const rate = `${formatPKR(item.unit_price)}${item.discount_pct > 0 ? ` -${escapeHtml(item.discount_pct)}%` : ''}`
       return `
-      <tr><td colspan="2" class="nm ur">${escapeHtml(item.product_name)}</td></tr>
-      <tr><td class="ln">${qtyLine}${disc}</td><td class="r bold">${formatPKR(item.line_total)}</td></tr>`
+      <tr><td class="nm ur">${escapeHtml(item.product_name)}</td><td class="r nm">${formatPKR(item.line_total)}</td></tr>
+      <tr><td class="ln sep">${qty}</td><td class="ln r sep">${rate}</td></tr>`
     })
     .join('')
 
   const printedAt = new Date()
+  const dateStr = new Date(data.date).toLocaleDateString('en-PK')
+  const timeStr = printedAt.toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' })
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
 <title>Receipt ${data.invoice_no}</title>
@@ -69,63 +79,67 @@ export function buildReceiptHtml(data: ReceiptData, shop: ShopInfo) {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet">
 <style>
-@page{size:${w}mm auto;margin:0}
+@page{size:${paper}mm auto;margin:0}
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:${w}mm;background:#fff}
-body{font-family:'Courier New',monospace;font-size:${px.body}px;line-height:1.35;color:#000;
-  padding:${narrow ? '2mm 2mm 8mm' : '3mm 3mm 10mm'};-webkit-print-color-adjust:exact}
-h1{font-size:${px.shop}px;text-align:center;font-weight:bold;line-height:1.2}
-.sub{text-align:center;font-size:${px.small}px}
-.meta{font-size:${px.line}px}
-.div{border-top:1px dashed #000;margin:${narrow ? 3 : 4}px 0}
-/* fixed layout + explicit split so the money column is never squeezed and the
-   qty/rate line wraps instead */
+html,body{width:${paper}mm;background:#fff}
+body{font-family:'Courier New','Consolas',monospace;font-size:${px.body}px;line-height:1.4;color:#000;
+  padding:4mm ${pad}mm 12mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+h1{font-size:${px.shop}px;text-align:center;font-weight:bold;line-height:1.15;letter-spacing:.5px}
+.sub{text-align:center;font-size:${px.sub}px;margin-top:1px}
+.meta{font-size:${px.sub}px}
+.rule{border-top:1px solid #000;margin:5px 0}
+.dash{border-top:1px dashed #000;margin:5px 0}
 table{width:100%;border-collapse:collapse;table-layout:fixed}
-col.lbl{width:${narrow ? 60 : 63}%}
-col.amt{width:${narrow ? 40 : 37}%}
+col.lbl{width:${narrow ? 54 : 62}%}
+col.amt{width:${narrow ? 46 : 38}%}
 td{vertical-align:top;word-wrap:break-word;overflow-wrap:break-word}
-.nm{font-weight:bold;padding-top:${narrow ? 2 : 3}px}
-.ln{font-size:${px.line}px}
+.hd td{font-size:${px.sub}px;font-weight:bold;border-bottom:1px solid #000;padding-bottom:3px}
+.nm{font-weight:bold;padding-top:5px;text-align:left}
+.ln{font-size:${px.line}px;padding-left:${narrow ? 3 : pad}mm;padding-top:3px}
+.sep{border-bottom:1px dotted #666;padding-bottom:4px}
 .r{text-align:right}
 .bold{font-weight:bold}
-.tot td{padding:1px 0}
-.big td{font-size:${px.total}px;font-weight:bold;padding-top:2px}
-.ft{text-align:center;margin-top:${narrow ? 5 : 7}px;font-size:${px.small}px}
+.tot td{padding:2px 0;font-size:${px.line}px}
+.tot tr.big td{font-size:${px.total}px;font-weight:bold;padding:4px 0}
+.tot tr.mid td{font-size:${px.khata}px;font-weight:bold;padding:3px 0}
+.sect{font-weight:bold;font-size:${px.sub}px;margin-bottom:2px}
+.ft{text-align:center;margin-top:8px;font-size:${px.sub}px}
 .ur{font-family:'Noto Nastaliq Urdu','Jameel Noori Nastaleeq',serif;direction:rtl;unicode-bidi:plaintext;
-  line-height:1.9;font-size:${px.body}px}
+  line-height:1.8;font-size:${px.urdu}px}
 </style></head><body>
 <h1>${escapeHtml(shop.name)}</h1>
 ${shop.address ? `<div class="sub">${escapeHtml(shop.address)}</div>` : ''}
 ${shop.phone ? `<div class="sub">Ph: ${escapeHtml(shop.phone)}</div>` : ''}
-<div class="div"></div>
-<div class="meta">${escapeHtml(data.invoice_no)}</div>
-<div class="meta">${escapeHtml(new Date(data.date).toLocaleDateString('en-PK'))} ${escapeHtml(printedAt.toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' }))}</div>
+<div class="rule"></div>
+<div class="meta">Bill: <strong>${escapeHtml(data.invoice_no)}</strong></div>
+<div class="meta">Date: ${escapeHtml(dateStr)} &nbsp; ${escapeHtml(timeStr)}</div>
 ${data.customer_name ? `<div class="meta">Customer: <strong>${escapeHtml(data.customer_name)}</strong></div>` : ''}
-<div class="div"></div>
-<table><colgroup><col class="lbl"><col class="amt"></colgroup>${rows}</table>
-<div class="div"></div>
+<div class="dash"></div>
+<table><colgroup><col class="lbl"><col class="amt"></colgroup>
+  <tr class="hd"><td>ITEM</td><td class="r">AMOUNT</td></tr>${rows}</table>
 <table class="tot"><colgroup><col class="lbl"><col class="amt"></colgroup>
   <tr class="big"><td>TOTAL</td><td class="r">${formatPKR(data.total)}</td></tr>
   ${data.tendered != null ? `<tr><td>Received</td><td class="r">${formatPKR(data.tendered)}</td></tr>` : ''}
   ${data.change != null ? `<tr class="bold"><td>Change</td><td class="r">${formatPKR(data.change)}</td></tr>` : ''}
   <tr><td>Paid</td><td class="r">${formatPKR(data.paid)}</td></tr>
-  ${data.due > 0 ? `<tr class="bold"><td>Udhaar (This Bill)</td><td class="r">${formatPKR(data.due)}</td></tr>` : ''}
+  ${data.due > 0 ? `<tr class="mid"><td>Udhaar (This Bill)</td><td class="r">${formatPKR(data.due)}</td></tr>` : ''}
 </table>
 ${data.new_balance != null && ((data.previous_balance ?? 0) > 0 || data.due > 0) ? `
-<div class="div"></div>
-<div class="bold" style="font-size:${px.small}px">ACCOUNT (KHATA)</div>
+<div class="dash"></div>
+<div class="sect">ACCOUNT (KHATA)</div>
 <table class="tot"><colgroup><col class="lbl"><col class="amt"></colgroup>
   <tr><td>Previous Balance</td><td class="r">${formatPKR(data.previous_balance ?? 0)}</td></tr>
   ${data.due > 0 ? `<tr><td>+ This Bill Udhaar</td><td class="r">${formatPKR(data.due)}</td></tr>` : ''}
   ${(data.khata_paid ?? 0) > 0 ? `<tr><td>- Paid to Khata</td><td class="r">${formatPKR(data.khata_paid ?? 0)}</td></tr>` : ''}
-  <tr class="big"><td>Balance Due</td><td class="r">${formatPKR(data.new_balance)}</td></tr>
+  <tr class="mid"><td>Balance Due</td><td class="r">${formatPKR(data.new_balance)}</td></tr>
 </table>` : ''}
-<div class="div"></div>
+<div class="rule"></div>
 <div class="ft">${escapeHtml(shop.footer)}</div>
 </body></html>`
 
   return html
 }
+
 
 // Print through a hidden iframe rather than a popup window: the receipt is
 // printed automatically right after the sale RPC resolves, and by then the
