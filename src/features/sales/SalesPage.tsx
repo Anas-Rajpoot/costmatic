@@ -9,7 +9,10 @@ import { useSettings } from '@/features/settings/hooks/useSettings'
 import { useAuth } from '@/features/auth/AuthContext'
 import { get, set } from 'idb-keyval'
 import { formatPKR, formatQty, round2, unitShort } from '@/lib/format'
-import { computeLine, computeAmountLine, getListPrice, type SaleMode } from '@/lib/pricing'
+import {
+  computeLine, computeAmountLine, getListPrice, isLooseProduct, baseUnitOf, packUnitsOf,
+  unitEligible, defaultUnitFor, type SaleMode,
+} from '@/lib/pricing'
 import { printReceipt, type ReceiptData, type ShopInfo } from '@/lib/receipt'
 import { cn } from '@/lib/utils'
 import type { Product, ProductUnit, Customer } from '@/types'
@@ -27,36 +30,6 @@ interface CartLine {
   list_price: number
   unit_price: number
   line_total: number
-}
-
-function isLooseProduct(p: Product): boolean {
-  return p.product_kind === 'loose'
-}
-
-// The factor-1 base unit (kg / litre / piece / bottle) used for weight & amount modes.
-function baseUnitOf(p: Product): ProductUnit {
-  return p.units!.find(u => u.unit_name === p.base_unit) ?? p.units![0]
-}
-
-// Non-base units (packs like 250g / 5kg, or crate) sold as whole counts.
-function packUnitsOf(p: Product): ProductUnit[] {
-  return (p.units ?? []).filter(u => u.unit_name !== p.base_unit)
-}
-
-// Retail/wholesale eligibility (migration 0008). Undefined (old rows) → allowed.
-function unitEligible(u: ProductUnit, mode: SaleMode): boolean {
-  return mode === 'retail' ? (u.retail_eligible ?? true) : (u.wholesale_eligible ?? true)
-}
-function eligibleUnits(p: Product, mode: SaleMode): ProductUnit[] {
-  return (p.units ?? []).filter(u => unitEligible(u, mode))
-}
-// Default unit when adding/fixing a line for a mode: retail → the smallest (base if
-// eligible), wholesale → a bulk (non-base) eligible unit, else any eligible, else base.
-function defaultUnitFor(p: Product, mode: SaleMode): ProductUnit {
-  const base = baseUnitOf(p)
-  const elig = eligibleUnits(p, mode)
-  if (mode === 'retail') return unitEligible(base, 'retail') ? base : (elig[0] ?? base)
-  return elig.find(u => u.unit_name !== p.base_unit) ?? elig[0] ?? base
 }
 
 let _cartKeySeq = 1
@@ -328,12 +301,16 @@ export default function SalesPage() {
     return { ...l, ...computeLine(l.unit, l.quantity, l.discount_pct, mode) }
   }
 
-  // On a mode switch, if a line's unit is no longer eligible (cigarette pack in
-  // wholesale, carton in retail…), auto-switch it to that mode's default eligible
-  // unit and drop back to qty mode; otherwise just recompute.
+  // On a mode switch every counted line moves to that mode's selling unit —
+  // wholesale sells the bulk unit (crate / carton / dozen), retail the smallest —
+  // so flipping to Wholesale never leaves the cart billing single pieces.
+  // Loose lines (weight / Rs-amount) keep their unit; only ineligibility moves them.
   function fixLineForMode(l: CartLine, mode: SaleMode): CartLine {
-    if (unitEligible(l.unit, mode)) return recomputeLine(l, mode)
+    const loose = isLooseProduct(l.product)
+    if (loose && unitEligible(l.unit, mode)) return recomputeLine(l, mode)
     const newUnit = defaultUnitFor(l.product, mode)
+    if (newUnit.unit_name === l.unit.unit_name) return recomputeLine(l, mode)
+    // Quantity carries over as typed (1 piece → 1 crate); the cashier sets the count.
     const qty = l.input_mode === 'qty' ? l.quantity : 1
     return { ...l, unit: newUnit, input_mode: 'qty', quantity: qty, ...computeLine(newUnit, qty, l.discount_pct, mode) }
   }

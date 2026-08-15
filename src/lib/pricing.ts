@@ -1,8 +1,50 @@
-import type { ProductUnit } from '@/types'
+import type { Product, ProductUnit } from '@/types'
 import { round2, round3 } from '@/lib/format'
 
 // Retail vs wholesale — the POS mode toggle picks which price column is used.
 export type SaleMode = 'retail' | 'wholesale'
+
+// ── Unit selection ────────────────────────────────────────────────────────────
+
+export function isLooseProduct(p: Product): boolean {
+  return p.product_kind === 'loose'
+}
+
+/** The factor-1 base unit (kg / litre / piece / bottle) used for weight & amount modes. */
+export function baseUnitOf(p: Product): ProductUnit {
+  return p.units!.find(u => u.unit_name === p.base_unit) ?? p.units![0]
+}
+
+/** Non-base units (packs like 250g / 5kg, or a crate) sold as whole counts. */
+export function packUnitsOf(p: Product): ProductUnit[] {
+  return (p.units ?? []).filter(u => u.unit_name !== p.base_unit)
+}
+
+/** Retail/wholesale eligibility (migration 0008). Undefined (old rows) → allowed. */
+export function unitEligible(u: ProductUnit, mode: SaleMode): boolean {
+  return mode === 'retail' ? (u.retail_eligible ?? true) : (u.wholesale_eligible ?? true)
+}
+
+export function eligibleUnits(p: Product, mode: SaleMode): ProductUnit[] {
+  return (p.units ?? []).filter(u => unitEligible(u, mode))
+}
+
+/**
+ * The unit a line should sell in for a mode: retail → the smallest eligible unit
+ * (piece / bottle / kg), wholesale → the biggest eligible bulk unit (carton /
+ * crate / bag). A product with only one unit keeps that unit in both modes.
+ * factor can arrive as a string from PostgREST, so compare numerically.
+ */
+export function defaultUnitFor(p: Product, mode: SaleMode): ProductUnit {
+  const base = baseUnitOf(p)
+  const elig = eligibleUnits(p, mode)
+  if (elig.length === 0) return base
+  const bySize = [...elig].sort((a, b) => Number(a.factor) - Number(b.factor))
+  if (mode === 'retail') return bySize[0]
+  const bulk = bySize.filter(u => u.unit_name !== p.base_unit)
+  const pool = bulk.length ? bulk : bySize
+  return pool[pool.length - 1]
+}
 
 // The per-unit list price for the current sale mode. Prices are numeric in the DB
 // (PostgREST returns them as strings), so coerce.
