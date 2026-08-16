@@ -2,21 +2,34 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import type { Product, ProductUnit } from '@/types'
 
+/** PostgREST caps a response at 1,000 rows, so the catalog is read in pages. */
+const PAGE = 1000
+
 export function useProducts() {
   return useQuery({
     queryKey: ['products'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('products')
-        .select(`
-          *,
-          category:categories(id, name_en, name_ur),
-          units:product_units(*),
-          stock(quantity_in_base_unit, updated_at),
-          product_costs(cost_price)
-        `)
-        .order('name_en')
-      if (error) throw error
+      // Once a seeded catalog runs past 1,000 SKUs a plain select silently
+      // returns the first 1,000 and the rest simply are not there — no error,
+      // no warning, products just missing from search and from this list.
+      // Page until a short page comes back.
+      const data: Record<string, unknown>[] = []
+      for (let from = 0; ; from += PAGE) {
+        const { data: page, error } = await supabase
+          .from('products')
+          .select(`
+            *,
+            category:categories(id, name_en, name_ur),
+            units:product_units(*),
+            stock(quantity_in_base_unit, updated_at),
+            product_costs(cost_price)
+          `)
+          .order('name_en')
+          .range(from, from + PAGE - 1)
+        if (error) throw error
+        data.push(...(page as unknown as Record<string, unknown>[]))
+        if (!page || page.length < PAGE) break
+      }
       // PostgREST returns one-to-one embeds (stock, product_costs — their
       // product_id is unique) as a single object, but the app reads them as
       // arrays (stock[0], product_costs[0]). Normalize to arrays so stock
