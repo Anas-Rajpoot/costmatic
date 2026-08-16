@@ -103,6 +103,50 @@ export function useSaveProduct() {
   })
 }
 
+export interface BulkDeleteResult {
+  deleted: number
+  /** Products the database refused to drop, with the reason in shop terms. */
+  blocked: { id: string; name: string; reason: 'traded' | 'other'; message: string }[]
+}
+
+/**
+ * Delete many products at once.
+ *
+ * sale_items and purchase_items reference products with no cascade, so a
+ * product that has ever been billed or bought cannot be removed — the row is
+ * what makes an old invoice still readable. A single bulk statement would fail
+ * entirely on the first such product, taking the deletable ones down with it,
+ * so this tries the batch and falls back to one-by-one to salvage the rest and
+ * name exactly what was kept.
+ */
+export function useBulkDeleteProducts() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (items: { id: string; name: string }[]): Promise<BulkDeleteResult> => {
+      if (items.length === 0) return { deleted: 0, blocked: [] }
+
+      const bulk = await supabase.from('products').delete().in('id', items.map(i => i.id))
+      if (!bulk.error) return { deleted: items.length, blocked: [] }
+
+      const blocked: BulkDeleteResult['blocked'] = []
+      let deleted = 0
+      for (const it of items) {
+        const { error } = await supabase.from('products').delete().eq('id', it.id)
+        if (!error) { deleted++; continue }
+        // 23503 = foreign key violation → the product appears on a bill or purchase.
+        blocked.push({
+          id: it.id,
+          name: it.name,
+          reason: error.code === '23503' ? 'traded' : 'other',
+          message: error.message,
+        })
+      }
+      return { deleted, blocked }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
+  })
+}
+
 export function useDeleteProduct() {
   const qc = useQueryClient()
   return useMutation({

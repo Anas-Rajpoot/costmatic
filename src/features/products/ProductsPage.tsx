@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AnimatePresence } from 'framer-motion'
 import { Package, Plus, Settings2, Pencil, Trash2, Search } from 'lucide-react'
-import { useProducts, useDeleteProduct } from './hooks/useProducts'
+import {
+  useProducts, useDeleteProduct, useBulkDeleteProducts, type BulkDeleteResult,
+} from './hooks/useProducts'
 import { useCategories, categoryOptions } from './hooks/useCategories'
 import CategoryDialog from './components/CategoryDialog'
 import ProductDrawer from './components/ProductDrawer'
@@ -36,6 +38,18 @@ export default function ProductsPage() {
   const [showCatDialog, setShowCatDialog] = useState(false)
   const [drawerProduct, setDrawerProduct] = useState<Product | null | undefined>(undefined) // undefined = closed, null = new
   const [confirmDelId, setConfirmDelId] = useState<string | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [confirmBulk, setConfirmBulk] = useState(false)
+  const [bulkResult, setBulkResult] = useState<BulkDeleteResult | null>(null)
+  const bulkDelete = useBulkDeleteProducts()
+
+  function toggleOne(id: string) {
+    setSelected(s => {
+      const n = new Set(s)
+      n.has(id) ? n.delete(id) : n.add(id)
+      return n
+    })
+  }
 
   const filtered = products.filter(p => {
     const q = search.toLowerCase()
@@ -55,6 +69,29 @@ export default function ProductsPage() {
   async function handleDelete(id: string) {
     await deleteProduct.mutateAsync(id)
     setConfirmDelId(null)
+  }
+
+  // Only ever acts on what is on screen — selecting 166 beverages and then
+  // switching filters should not delete something you can no longer see.
+  const visibleSelected = filtered.filter(p => selected.has(p.id))
+  const allVisibleSelected = filtered.length > 0 && visibleSelected.length === filtered.length
+
+  function toggleAllVisible() {
+    setSelected(s => {
+      const n = new Set(s)
+      if (allVisibleSelected) filtered.forEach(p => n.delete(p.id))
+      else filtered.forEach(p => n.add(p.id))
+      return n
+    })
+  }
+
+  async function handleBulkDelete() {
+    const res = await bulkDelete.mutateAsync(
+      visibleSelected.map(p => ({ id: p.id, name: p.name_en })),
+    )
+    setConfirmBulk(false)
+    setSelected(new Set(res.blocked.map(b => b.id))) // keep the ones that survived
+    setBulkResult(res.blocked.length > 0 ? res : null)
   }
 
   function stockQty(p: Product): number {
@@ -159,6 +196,48 @@ export default function ProductsPage() {
         </span>
       </div>
 
+      {/* Bulk bar — only while something is picked, so it never adds noise */}
+      {visibleSelected.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 mb-3 px-4 py-2.5 rounded-card border border-brand bg-brand-soft">
+          <span className="text-sm font-medium text-brand">
+            {t('products.selectedCount', { count: visibleSelected.length })}
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelected(new Set())}
+            className="text-sm text-ink-muted hover:text-brand transition-colors"
+          >
+            {t('products.clearSelection')}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setBulkResult(null); setConfirmBulk(true) }}
+            className="ms-auto flex items-center gap-2 h-9 px-4 rounded-btn bg-due text-white text-sm font-semibold hover:bg-due/90 transition-colors"
+          >
+            <Trash2 size={15} />
+            {t('products.deleteSelected')}
+          </button>
+        </div>
+      )}
+
+      {/* What the database refused to drop, and why */}
+      {bulkResult && bulkResult.blocked.length > 0 && (
+        <div className="mb-3 px-4 py-3 rounded-card border border-low/30 bg-low/10 text-sm">
+          <p className="text-ink font-medium">
+            {t('products.bulkPartial', {
+              deleted: bulkResult.deleted, kept: bulkResult.blocked.length,
+            })}
+          </p>
+          <p className="text-ink-muted text-xs mt-1">{t('products.bulkTradedHint')}</p>
+          <ul className="mt-1.5 text-xs text-ink-muted list-disc ps-5">
+            {bulkResult.blocked.slice(0, 8).map(b => <li key={b.id}>{b.name}</li>)}
+            {bulkResult.blocked.length > 8 && (
+              <li>+{bulkResult.blocked.length - 8}</li>
+            )}
+          </ul>
+        </div>
+      )}
+
       {/* Products table */}
       <div className="bg-surface rounded-card border border-line overflow-x-auto">
         {isLoading ? (
@@ -174,6 +253,15 @@ export default function ProductsPage() {
           <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="border-b border-line bg-page">
+                <th className="ps-4 pe-1 py-3 w-8">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={toggleAllVisible}
+                    title={t('products.selectAllVisible')}
+                    className="w-4 h-4 rounded border-line text-brand focus:ring-brand/30 cursor-pointer"
+                  />
+                </th>
                 <th className="text-start px-4 py-3 text-ink-muted font-medium">{t('products.nameEn')}</th>
                 <th className="text-start px-4 py-3 text-ink-muted font-medium">{t('products.category')}</th>
                 <th className="text-start px-4 py-3 text-ink-muted font-medium">{t('products.brand')}</th>
@@ -196,9 +284,18 @@ export default function ProductsPage() {
                     key={p.id}
                     className={cn(
                       'border-b border-line last:border-0 transition-colors',
-                      low ? 'bg-low/5 hover:bg-low/10' : 'hover:bg-page/50'
+                      selected.has(p.id) ? 'bg-brand-soft/60'
+                        : low ? 'bg-low/5 hover:bg-low/10' : 'hover:bg-page/50'
                     )}
                   >
+                    <td className="ps-4 pe-1 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(p.id)}
+                        onChange={() => toggleOne(p.id)}
+                        className="w-4 h-4 rounded border-line text-brand focus:ring-brand/30 cursor-pointer"
+                      />
+                    </td>
                     {/* Name */}
                     <td className="px-4 py-3">
                       <div className="font-medium text-ink">
@@ -322,6 +419,36 @@ export default function ProductsPage() {
           />
         )}
       </AnimatePresence>
+
+      {/* Bulk delete confirmation — deleting 100+ rows deserves a real stop,
+          not the inline yes/no used for a single row. */}
+      {confirmBulk && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setConfirmBulk(false)} />
+          <div className="relative bg-surface rounded-card border border-line shadow-2xl w-full max-w-md p-5">
+            <h3 className="font-semibold text-ink">{t('products.deleteSelected')}</h3>
+            <p className="text-sm text-ink-muted mt-2">
+              {t('products.bulkConfirm', { count: visibleSelected.length })}
+            </p>
+            <p className="text-xs text-ink-muted mt-1">{t('products.bulkTradedHint')}</p>
+            <div className="flex justify-end gap-3 mt-5">
+              <button
+                onClick={() => setConfirmBulk(false)}
+                className="h-9 px-4 border border-line text-ink-muted rounded-btn text-sm hover:border-brand hover:text-brand transition-colors"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={bulkDelete.isPending}
+                className="h-9 px-5 bg-due text-white rounded-btn text-sm font-semibold hover:bg-due/90 disabled:opacity-60 transition-colors"
+              >
+                {bulkDelete.isPending ? t('common.loading') : t('common.delete')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </PageFade>
   )
 }
