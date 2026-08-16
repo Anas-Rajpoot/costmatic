@@ -6,7 +6,7 @@ import { useCustomers } from '@/features/customers/hooks/useCustomers'
 import { useSuppliers } from '@/features/suppliers/hooks/useSuppliers'
 import { useProducts } from '@/features/products/hooks/useProducts'
 import { useAuth } from '@/features/auth/AuthContext'
-import { useReturnsReport } from './hooks/useReturnsReport'
+import { useReturnsReport, usePeriodReturnsMargin } from './hooks/useReturnsReport'
 import { usePeriodExpenses } from '@/features/expenses/hooks/useExpenses'
 import { formatPKR, formatQty, unitShort } from '@/lib/format'
 import { downloadCSV } from '@/lib/exportCSV'
@@ -29,7 +29,8 @@ function Spinner() {
 }
 
 export default function ReportsPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const isUrdu = i18n.language === 'ur'
   const { profile } = useAuth()
   const isAdmin = profile?.role === 'admin'
 
@@ -44,6 +45,7 @@ export default function ReportsPage() {
   const profitQuery  = usePeriodProfit(from, to, saleTypeParam)
   const splitQuery   = useSalesSplit(from, to)
   const returnsQuery = useReturnsReport(from, to)
+  const returnsMarginQuery = usePeriodReturnsMargin(from, to, saleTypeParam, isAdmin)
   const expensesQuery = usePeriodExpenses(from, to, isAdmin)
   const { data: customers = [] } = useCustomers()
   const { data: suppliers = [] } = useSuppliers()
@@ -58,7 +60,11 @@ export default function ReportsPage() {
   const returnsTotal = returnRows.reduce((s, r) => s + r.total, 0)
   const expenses     = expensesQuery.data
   const expensesTotal = expenses?.total ?? 0
-  const netProfit    = profitTotal - returnsTotal - expensesTotal
+  // Only the margin on returned goods is lost — the stock itself came back, so
+  // its cost is recovered. Deducting the refunded value here would overstate
+  // the loss by exactly the cost of the goods.
+  const returnsMargin = returnsMarginQuery.data ?? 0
+  const netProfit    = profitTotal - returnsMargin - expensesTotal
 
   const salesGrandTotal = salesRows.reduce((s, r) => s + r.day_total, 0)
   const salesGrandCash  = salesRows.reduce((s, r) => s + r.cash_total, 0)
@@ -179,10 +185,10 @@ export default function ReportsPage() {
                 <span className="text-ink-muted">{t('reports.profit')}</span>
                 <span className="tabular-nums text-ink font-medium">{formatPKR(profitTotal)}</span>
               </div>
-              {returnsTotal > 0 && (
+              {returnsMargin !== 0 && (
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-ink-muted">− {t('reports.tabReturns')}</span>
-                  <span className="tabular-nums text-due">{formatPKR(returnsTotal)}</span>
+                  <span className="text-ink-muted">− {t('reports.returnsMargin')}</span>
+                  <span className="tabular-nums text-due">{formatPKR(returnsMargin)}</span>
                 </div>
               )}
               <div className="flex items-center justify-between text-sm">
@@ -374,7 +380,9 @@ export default function ReportsPage() {
               <tbody>
                 {expenses!.by_category.map(c => (
                   <tr key={c.category} className="border-b border-line last:border-0 hover:bg-page/50 transition-colors">
-                    <td className="px-4 py-3 text-ink font-medium">{c.category}</td>
+                    <td className="px-4 py-3 text-ink font-medium">
+                      {isUrdu && c.category_ur ? c.category_ur : c.category}
+                    </td>
                     <td className="px-4 py-3 text-end tabular-nums text-ink-muted">{c.count}</td>
                     <td className="px-4 py-3 text-end font-semibold tabular-nums text-due">{formatPKR(c.total)}</td>
                   </tr>

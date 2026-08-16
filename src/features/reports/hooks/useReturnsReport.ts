@@ -13,6 +13,28 @@ export interface ReturnRow {
   item_count: number
 }
 
+/**
+ * Margin lost to returns in a period — NOT the refunded value.
+ * Returned goods go back on the shelf, so their cost is recovered and only the
+ * profit on them is gone. This is the figure that comes off gross profit.
+ */
+export function usePeriodReturnsMargin(
+  from: string, to: string, saleType: string | null, enabled = true,
+) {
+  return useQuery({
+    queryKey: ['returns_margin', from, to, saleType],
+    enabled,
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_period_returns_margin', {
+        p_from: from, p_to: to, p_sale_type: saleType,
+      })
+      if (error) throw error
+      return Number(data ?? 0)
+    },
+    staleTime: 60_000,
+  })
+}
+
 /** Returns raised in a period — what came back, and how it was refunded. */
 export function useReturnsReport(from: string, to: string) {
   return useQuery({
