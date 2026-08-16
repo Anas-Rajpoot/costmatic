@@ -48,6 +48,19 @@ export default function PurchaseForm({ onClose }: Props) {
   const [lines, setLines] = useState<LineItem[]>([blankLine()])
   const [err, setErr] = useState('')
   const [pickSearch, setPickSearch] = useState('')
+  const [openPicker, setOpenPicker] = useState<number | null>(null) // line._key
+  const [productSearch, setProductSearch] = useState('')
+
+  const pickerOptions = (() => {
+    const q = productSearch.trim().toLowerCase()
+    return products
+      .filter(p => p.is_active && (!q
+        || p.name_en.toLowerCase().includes(q)
+        || (p.name_ur ?? '').includes(productSearch.trim())
+        || (p.brand ?? '').toLowerCase().includes(q)
+        || (p.barcode ?? '').includes(productSearch.trim())))
+      .slice(0, 40)
+  })()
 
   const historyQuery = useSupplierProducts(supplier_id)
   const supplierProducts = historyQuery.data ?? []
@@ -283,7 +296,8 @@ export default function PurchaseForm({ onClose }: Props) {
               <h3 className="text-xs font-semibold text-ink-muted uppercase tracking-wider">{t('purchases.items')}</h3>
               <p className="text-xs text-ink-muted">{t('purchases.stockNote')}</p>
             </div>
-            <div className="rounded-card border border-line overflow-hidden">
+            {/* Not overflow-hidden: the product search list has to escape the card. */}
+            <div className="rounded-card border border-line">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-page border-b border-line">
@@ -299,16 +313,41 @@ export default function PurchaseForm({ onClose }: Props) {
                   {lines.map((line, idx) => (
                     <tr key={line._key} className="border-b border-line last:border-0">
                       <td className="px-3 py-2">
-                        <select
-                          value={line.product_id}
-                          onChange={e => pickProduct(line._key, e.target.value)}
-                          className="w-full h-8 rounded border border-line bg-surface px-2 text-sm text-ink focus:outline-none focus:ring-1 focus:ring-brand/30"
-                        >
-                          <option value="">—</option>
-                          {products.filter(p => p.is_active).map(p => (
-                            <option key={p.id} value={p.id}>{p.name_en}{p.brand ? ` (${p.brand})` : ''}</option>
-                          ))}
-                        </select>
+                        {/* Type-to-search rather than a 40-row select: with a
+                            full catalog, scrolling to "Sooper" is the slow bit. */}
+                        <div className="relative">
+                          <input
+                            value={openPicker === line._key ? productSearch : (line.product?.name_en ?? '')}
+                            onFocus={() => { setOpenPicker(line._key); setProductSearch('') }}
+                            onChange={e => setProductSearch(e.target.value)}
+                            onBlur={() => window.setTimeout(
+                              () => setOpenPicker(k => (k === line._key ? null : k)), 120)}
+                            placeholder={t('purchases.searchItems')}
+                            className="w-full h-8 rounded border border-line bg-surface px-2 text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand/30 focus:border-brand"
+                          />
+                          {openPicker === line._key && (
+                            <ul className="absolute z-30 top-full mt-1 w-full min-w-[15rem] bg-surface border border-line rounded-card shadow-lg max-h-56 overflow-y-auto overscroll-contain no-scrollbar">
+                              {pickerOptions.length === 0 ? (
+                                <li className="px-3 py-2 text-xs text-ink-muted">{t('reports.noData')}</li>
+                              ) : pickerOptions.map(p => (
+                                <li key={p.id}>
+                                  <button
+                                    type="button"
+                                    onMouseDown={e => {
+                                      e.preventDefault()
+                                      pickProduct(line._key, p.id)
+                                      setOpenPicker(null)
+                                    }}
+                                    className="w-full text-start px-3 py-1.5 text-sm text-ink hover:bg-brand/5 transition-colors"
+                                  >
+                                    {p.name_en}
+                                    {p.brand && <span className="text-ink-muted"> ({p.brand})</span>}
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-2">
                         <select

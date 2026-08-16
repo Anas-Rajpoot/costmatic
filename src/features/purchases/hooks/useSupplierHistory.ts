@@ -1,6 +1,71 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 
+/** One delivery from a supplier, with the goods that came with it. */
+export interface SupplierPurchase {
+  id: string
+  invoice_no: string | null
+  date: string
+  subtotal: number
+  discount: number
+  total: number
+  paid: number
+  due: number
+  items: {
+    product_name: string
+    unit_name: string
+    quantity: number
+    unit_cost: number
+    line_total: number
+  }[]
+}
+
+/**
+ * Every delivery from this supplier, newest first, with its line items.
+ *
+ * The khata only ever said "purchase — Rs 5,000". This is the other half of
+ * the record: what actually arrived that day, in what unit, at what price.
+ */
+export function useSupplierPurchases(supplierId: string) {
+  return useQuery({
+    queryKey: ['supplier_purchases', supplierId],
+    enabled: !!supplierId,
+    queryFn: async (): Promise<SupplierPurchase[]> => {
+      const { data, error } = await supabase
+        .from('purchases')
+        .select(`id, invoice_no, date, subtotal, discount, total, paid, due,
+                 purchase_items(quantity, unit_name, unit_cost, line_total,
+                                products(name_en))`)
+        .eq('supplier_id', supplierId)
+        .order('date', { ascending: false })
+        .limit(100)
+      if (error) throw error
+
+      return ((data ?? []) as unknown as Array<Record<string, unknown>>).map(r => ({
+        id: String(r.id),
+        invoice_no: (r.invoice_no as string) ?? null,
+        date: String(r.date),
+        subtotal: Number(r.subtotal) || 0,
+        discount: Number(r.discount) || 0,
+        total: Number(r.total) || 0,
+        paid: Number(r.paid) || 0,
+        due: Number(r.due) || 0,
+        items: ((r.purchase_items ?? []) as Array<{
+          quantity: number; unit_name: string; unit_cost: number; line_total: number
+          products: { name_en: string } | null
+        }>).map(i => ({
+          product_name: i.products?.name_en ?? '',
+          unit_name: i.unit_name,
+          quantity: Number(i.quantity) || 0,
+          unit_cost: Number(i.unit_cost) || 0,
+          line_total: Number(i.line_total) || 0,
+        })),
+      }))
+    },
+    staleTime: 60_000,
+  })
+}
+
 /** One product this supplier has delivered before, with the last terms used. */
 export interface SupplierProduct {
   product_id: string
