@@ -302,7 +302,10 @@
     "noPurchases": "No purchases yet.",
     "selectProduct": "Select product…",
     "selectSupplier": "Select supplier first",
-    "stockNote": "Stock updates automatically on save"
+    "stockNote": "Stock updates automatically on save",
+    "previousItems": "Bought from this supplier before",
+    "searchItems": "Search items…",
+    "noPreviousItems": "Nothing bought from this supplier yet"
   },
   "products": {
     "title": "Products",

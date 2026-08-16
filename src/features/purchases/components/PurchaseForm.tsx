@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
-import { X, Plus, Trash2 } from 'lucide-react'
+import { X, Plus, Trash2, Search, Check } from 'lucide-react'
 import { useCreatePurchase } from '../hooks/usePurchases'
+import { useSupplierProducts, type SupplierProduct } from '../hooks/useSupplierHistory'
 import { useSuppliers } from '@/features/suppliers/hooks/useSuppliers'
 import { useProducts } from '@/features/products/hooks/useProducts'
 import { useAuth } from '@/features/auth/AuthContext'
@@ -46,6 +47,44 @@ export default function PurchaseForm({ onClose }: Props) {
   const [note, setNote] = useState('')
   const [lines, setLines] = useState<LineItem[]>([blankLine()])
   const [err, setErr] = useState('')
+  const [pickSearch, setPickSearch] = useState('')
+
+  const historyQuery = useSupplierProducts(supplier_id)
+  const supplierProducts = historyQuery.data ?? []
+  const historyRows = supplierProducts.filter(sp => {
+    const q = pickSearch.trim()
+    if (!q) return true
+    return sp.product_name.toLowerCase().includes(q.toLowerCase()) || sp.name_ur.includes(q)
+  })
+
+  /** Tick = add the line pre-filled from last time; untick = take it back out. */
+  function togglePick(sp: SupplierProduct) {
+    if (lines.some(l => l.product_id === sp.product_id)) {
+      setLines(ls => {
+        const kept = ls.filter(l => l.product_id !== sp.product_id)
+        return kept.length ? kept : [blankLine()]
+      })
+      return
+    }
+    const p = products.find(x => x.id === sp.product_id) ?? null
+    const units = p?.units ?? []
+    const quantity = String(sp.last_qty || 1)
+    const unit_cost = String(sp.last_cost || 0)
+    const line: LineItem = {
+      _key: freshKey(),
+      product_id: sp.product_id,
+      product: p,
+      available_units: units,
+      unit_name: units.some(u => u.unit_name === sp.unit_name)
+        ? sp.unit_name
+        : (units[0]?.unit_name ?? 'piece'),
+      quantity,
+      unit_cost,
+      line_total: (parseFloat(quantity) || 0) * (parseFloat(unit_cost) || 0),
+    }
+    // Drop any untouched blank row so ticking never leaves an empty line behind.
+    setLines(ls => [...ls.filter(l => l.product_id), line])
+  }
 
   function setLine(key: number, patch: Partial<LineItem>) {
     setLines(ls => ls.map(l => {
@@ -173,6 +212,70 @@ export default function PurchaseForm({ onClose }: Props) {
               />
             </div>
           </div>
+
+          {/* ── What this supplier brought last time ──
+              A wholesaler turns up with roughly the same list every visit, so
+              ticking it off beats hunting each item out of a 40-row dropdown.
+              Each tick pre-fills the unit and the price last paid. */}
+          {supplier_id && (
+            <div className="rounded-card border border-line bg-page/50 p-3">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <h3 className="text-xs font-semibold text-ink-muted uppercase tracking-wider">
+                  {t('purchases.previousItems')}
+                </h3>
+                <div className="relative w-56">
+                  <Search size={14} className="absolute start-2.5 top-1/2 -translate-y-1/2 text-ink-muted pointer-events-none" />
+                  <input
+                    value={pickSearch}
+                    onChange={e => setPickSearch(e.target.value)}
+                    placeholder={t('purchases.searchItems')}
+                    className="w-full h-8 rounded-input border border-line bg-surface ps-8 pe-2 text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand/30 focus:border-brand"
+                  />
+                </div>
+              </div>
+
+              {historyQuery.isLoading ? (
+                <p className="text-xs text-ink-muted py-2">{t('common.loading')}</p>
+              ) : historyRows.length === 0 ? (
+                <p className="text-xs text-ink-muted py-2">
+                  {supplierProducts.length === 0 ? t('purchases.noPreviousItems') : t('reports.noData')}
+                </p>
+              ) : (
+                <div className="max-h-52 overflow-y-auto overscroll-contain no-scrollbar grid sm:grid-cols-2 gap-1">
+                  {historyRows.map(sp => {
+                    const picked = lines.some(l => l.product_id === sp.product_id)
+                    return (
+                      <button
+                        key={sp.product_id}
+                        type="button"
+                        onClick={() => togglePick(sp)}
+                        className={cn(
+                          'flex items-center gap-2 text-start px-2 py-1.5 rounded-input border transition-colors',
+                          picked
+                            ? 'border-brand bg-brand-soft'
+                            : 'border-transparent hover:border-line hover:bg-surface',
+                        )}
+                      >
+                        <span className={cn(
+                          'w-4 h-4 rounded border grid place-items-center shrink-0',
+                          picked ? 'bg-brand border-brand text-white' : 'border-line',
+                        )}>
+                          {picked && <Check size={11} strokeWidth={3} />}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm text-ink truncate">{sp.product_name}</span>
+                          <span className="block text-[11px] text-ink-muted tabular">
+                            {sp.unit_name} · {formatPKR(sp.last_cost)}
+                            {sp.times > 1 && ` · ${sp.times}×`}
+                          </span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Items table */}
           <div>
