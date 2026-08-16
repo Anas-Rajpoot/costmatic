@@ -255,6 +255,103 @@ ${data.customer_name ? `<div class="meta">Customer: <strong>${escapeHtml(data.cu
 </body></html>`
 }
 
+// ── Day close (golak) slip ────────────────────────────────────────────────────
+
+export interface DayCloseReceiptData {
+  date: string
+  opening_cash: number
+  cash_sales: number
+  khata_collected: number
+  returns_cash: number
+  supplier_paid: number
+  purchases_cash: number
+  expenses_cash: number
+  expected_cash: number
+  counted_cash: number
+  difference: number
+  invoices: number
+  sales_total: number
+  udhaar_given: number
+  note?: string | null
+  closed_by?: string | null
+}
+
+/** The end-of-day cash-up, on the same roll as the receipts. */
+export function buildDayCloseHtml(d: DayCloseReceiptData, shop: ShopInfo) {
+  const { paper, narrow, pad, px } = metrics(shop)
+  const row = (label: string, value: number, cls = '') =>
+    `<tr class="${cls}"><td>${escapeHtml(label)}</td><td class="r">${formatPKR(value)}</td></tr>`
+  const printedAt = new Date()
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Day Close ${d.date}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+@page{size:${paper}mm auto;margin:0}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:${paper}mm;background:#fff}
+body{font-family:'Inter',system-ui,'Segoe UI',Roboto,Arial,sans-serif;font-weight:500;
+  font-size:${px.body}px;line-height:1.45;color:#000;font-variant-numeric:tabular-nums;
+  font-feature-settings:'tnum' 1;padding:4mm ${pad}mm 12mm}
+h1{font-size:${px.shop}px;text-align:center;font-weight:700;line-height:1.2}
+.kind{text-align:center;font-weight:700;font-size:${px.khata}px;letter-spacing:2px;
+  border:2px solid #000;padding:2px 0;margin-top:4px}
+.sub{text-align:center;font-size:${px.sub}px;margin-top:1px}
+.rule{border-top:1px solid #000;margin:5px 0}
+.dash{border-top:1px dashed #000;margin:5px 0}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+col.lbl{width:${narrow ? 58 : 62}%}
+col.amt{width:${narrow ? 42 : 38}%}
+td{vertical-align:top;padding:2px 0;font-size:${px.line}px;word-wrap:break-word}
+tr.big td{font-size:${px.total}px;font-weight:700;padding:4px 0}
+tr.mid td{font-size:${px.khata}px;font-weight:700;padding:3px 0}
+.r{text-align:right}
+.sect{font-weight:600;letter-spacing:.6px;font-size:${px.sub}px;margin:4px 0 2px}
+.ft{text-align:center;margin-top:8px;font-size:${px.sub}px}
+</style></head><body>
+<h1>${escapeHtml(shop.name)}</h1>
+<div class="kind">DAY CLOSE</div>
+<div class="sub">${escapeHtml(new Date(d.date).toLocaleDateString('en-PK'))} &nbsp; ${escapeHtml(printedAt.toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' }))}</div>
+${d.closed_by ? `<div class="sub">${escapeHtml(d.closed_by)}</div>` : ''}
+<div class="rule"></div>
+<div class="sect">CASH IN</div>
+<table><colgroup><col class="lbl"><col class="amt"></colgroup>
+  ${row('Opening float', d.opening_cash)}
+  ${row('Cash from bills', d.cash_sales)}
+  ${row('Khata recovered', d.khata_collected)}
+</table>
+<div class="sect">CASH OUT</div>
+<table><colgroup><col class="lbl"><col class="amt"></colgroup>
+  ${row('Returns refunded', d.returns_cash)}
+  ${row('Paid to suppliers', d.supplier_paid)}
+  ${row('Paid on purchases', d.purchases_cash)}
+  ${row('Expenses', d.expenses_cash)}
+</table>
+<div class="dash"></div>
+<table><colgroup><col class="lbl"><col class="amt"></colgroup>
+  ${row('Expected in drawer', d.expected_cash, 'mid')}
+  ${row('Counted', d.counted_cash, 'big')}
+  ${row(d.difference < 0 ? 'SHORT' : d.difference > 0 ? 'OVER' : 'Tallies', Math.abs(d.difference), 'mid')}
+</table>
+<div class="dash"></div>
+<div class="sect">DAY'S TRADE</div>
+<table><colgroup><col class="lbl"><col class="amt"></colgroup>
+  <tr><td>Bills</td><td class="r">${escapeHtml(d.invoices)}</td></tr>
+  ${row('Sales total', d.sales_total)}
+  ${row('Udhaar given', d.udhaar_given)}
+</table>
+${d.note ? `<div class="dash"></div><div style="font-size:${px.sub}px">${escapeHtml(d.note)}</div>` : ''}
+<div class="rule"></div>
+<div class="ft">Signature: ____________________</div>
+</body></html>`
+}
+
+export function printDayClose(data: DayCloseReceiptData, shop: ShopInfo) {
+  printHtml(buildDayCloseHtml(data, shop))
+}
+
 // Print through a hidden iframe rather than a popup window: the receipt is
 // printed automatically right after the RPC resolves, and by then the browser
 // no longer treats window.open() as user-initiated (popup blocked).
