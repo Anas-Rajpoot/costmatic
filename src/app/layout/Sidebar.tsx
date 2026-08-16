@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   LayoutDashboard, Package, ShoppingCart, Users, Truck,
-  ClipboardList, BarChart3, Settings, UserCog,
+  ClipboardList, BarChart3, Settings, UserCog, CalendarCheck, Receipt, PackageMinus,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -19,7 +19,10 @@ interface NavItem {
 const navItems: NavItem[] = [
   { path: '/dashboard',  icon: LayoutDashboard, labelKey: 'nav.dashboard' },
   { path: '/sales',      icon: ShoppingCart,    labelKey: 'nav.sales' },
+  { path: '/expenses',   icon: Receipt,         labelKey: 'nav.expenses' },
+  { path: '/day-close',  icon: CalendarCheck,   labelKey: 'nav.dayClose' },
   { path: '/products',   icon: Package,         labelKey: 'nav.products',  adminOnly: true },
+  { path: '/stock',      icon: PackageMinus,    labelKey: 'nav.stockAdjust', adminOnly: true },
   { path: '/customers',  icon: Users,           labelKey: 'nav.customers', adminOnly: true },
   { path: '/suppliers',  icon: Truck,           labelKey: 'nav.suppliers', adminOnly: true },
   { path: '/purchases',  icon: ClipboardList,   labelKey: 'nav.purchases', adminOnly: true },

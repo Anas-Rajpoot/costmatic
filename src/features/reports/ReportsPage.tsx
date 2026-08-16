@@ -6,11 +6,13 @@ import { useCustomers } from '@/features/customers/hooks/useCustomers'
 import { useSuppliers } from '@/features/suppliers/hooks/useSuppliers'
 import { useProducts } from '@/features/products/hooks/useProducts'
 import { useAuth } from '@/features/auth/AuthContext'
+import { useReturnsReport } from './hooks/useReturnsReport'
+import { usePeriodExpenses } from '@/features/expenses/hooks/useExpenses'
 import { formatPKR, formatQty, unitShort } from '@/lib/format'
 import { downloadCSV } from '@/lib/exportCSV'
 import { cn } from '@/lib/utils'
 
-type Tab = 'sales' | 'items' | 'receivables' | 'payables' | 'lowstock'
+type Tab = 'sales' | 'items' | 'returns' | 'expenses' | 'receivables' | 'payables' | 'lowstock'
 
 function monthStart() {
   const d = new Date()
@@ -41,6 +43,8 @@ export default function ReportsPage() {
   const itemsQuery   = useItemSales(from, to, saleTypeParam)
   const profitQuery  = usePeriodProfit(from, to, saleTypeParam)
   const splitQuery   = useSalesSplit(from, to)
+  const returnsQuery = useReturnsReport(from, to)
+  const expensesQuery = usePeriodExpenses(from, to, isAdmin)
   const { data: customers = [] } = useCustomers()
   const { data: suppliers = [] } = useSuppliers()
   const { data: products = [] } = useProducts()
@@ -49,6 +53,12 @@ export default function ReportsPage() {
   const salesRows    = salesQuery.data ?? []
   const itemRows     = itemsQuery.data ?? []
   const profitTotal  = profitQuery.data ?? 0
+
+  const returnRows   = returnsQuery.data ?? []
+  const returnsTotal = returnRows.reduce((s, r) => s + r.total, 0)
+  const expenses     = expensesQuery.data
+  const expensesTotal = expenses?.total ?? 0
+  const netProfit    = profitTotal - returnsTotal - expensesTotal
 
   const salesGrandTotal = salesRows.reduce((s, r) => s + r.day_total, 0)
   const salesGrandCash  = salesRows.reduce((s, r) => s + r.cash_total, 0)
@@ -69,6 +79,8 @@ export default function ReportsPage() {
   const TABS: { id: Tab; label: string }[] = [
     { id: 'sales',       label: t('reports.tabSales') },
     { id: 'items',       label: t('reports.tabItems') },
+    { id: 'returns',     label: t('reports.tabReturns') },
+    ...(isAdmin ? [{ id: 'expenses' as Tab, label: t('reports.tabExpenses') }] : []),
     { id: 'receivables', label: t('reports.tabReceivables') },
     { id: 'payables',    label: t('reports.tabPayables') },
     { id: 'lowstock',    label: t('reports.tabLowStock') },
@@ -160,11 +172,29 @@ export default function ReportsPage() {
             <p className="text-xl font-bold text-due tabular-nums">{formatPKR(salesGrandUdh)}</p>
           </div>
           {isAdmin && (
-            <div className="col-span-3 rounded-card border border-line bg-brand/5 p-3 flex items-center justify-between">
-              <span className="text-sm font-medium text-ink">{t('reports.profit')}</span>
-              <span className={cn('text-xl font-bold tabular-nums', profitTotal >= 0 ? 'text-brand' : 'text-due')}>
-                {formatPKR(profitTotal)}
-              </span>
+            /* Gross margin, then what actually leaves the shop: goods that came
+               back and the money spent running the place. */
+            <div className="col-span-3 rounded-card border border-line bg-brand/5 p-3 flex flex-col gap-1">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-ink-muted">{t('reports.profit')}</span>
+                <span className="tabular-nums text-ink font-medium">{formatPKR(profitTotal)}</span>
+              </div>
+              {returnsTotal > 0 && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-ink-muted">− {t('reports.tabReturns')}</span>
+                  <span className="tabular-nums text-due">{formatPKR(returnsTotal)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-ink-muted">− {t('reports.tabExpenses')}</span>
+                <span className="tabular-nums text-due">{formatPKR(expensesTotal)}</span>
+              </div>
+              <div className="flex items-center justify-between border-t border-line pt-1.5 mt-0.5">
+                <span className="text-sm font-medium text-ink">{t('reports.netProfit')}</span>
+                <span className={cn('text-xl font-bold tabular-nums', netProfit >= 0 ? 'text-brand' : 'text-due')}>
+                  {formatPKR(netProfit)}
+                </span>
+              </div>
             </div>
           )}
         </div>
@@ -194,6 +224,10 @@ export default function ReportsPage() {
                   downloadCSV(salesRows.map(r => ({ Date: r.sale_date, Invoices: r.invoice_count, Cash: r.cash_total, Udhaar: r.udhaar_total, Total: r.day_total })), `sales-${from}-${to}`)
                 else if (activeTab === 'items')
                   downloadCSV(itemRows.map(r => ({ Product: r.product_name, Unit: r.unit_name, QtySold: r.total_qty, Revenue: r.revenue })), `items-${from}-${to}`)
+                else if (activeTab === 'returns')
+                  downloadCSV(returnRows.map(r => ({ Date: r.date, Return: r.return_no, Bill: r.sale?.invoice_no ?? '', Customer: r.customer?.name ?? '', Items: r.item_count, Refund: r.refund_mode, Total: r.total })), `returns-${from}-${to}`)
+                else if (activeTab === 'expenses')
+                  downloadCSV((expenses?.by_category ?? []).map(c => ({ Category: c.category, Entries: c.count, Total: c.total })), `expenses-${from}-${to}`)
                 else if (activeTab === 'receivables')
                   downloadCSV(receivables.map(c => ({ Customer: c.name, Phone: c.phone ?? '', Balance: c.current_balance })), `receivables-${from}-${to}`)
                 else if (activeTab === 'payables')
@@ -274,6 +308,80 @@ export default function ReportsPage() {
                   <td className="px-4 py-3 text-end tabular-nums text-ink">
                     {formatPKR(itemRows.reduce((s, r) => s + r.revenue, 0))}
                   </td>
+                </tr>
+              </tbody>
+            </table>
+          )
+        )}
+
+        {/* ── Returns ── */}
+        {activeTab === 'returns' && (
+          returnsQuery.isLoading ? <Spinner /> :
+          returnRows.length === 0 ? <p className="p-10 text-center text-sm text-ink-muted">{t('reports.noData')}</p> : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-line bg-page">
+                  <th className="text-start px-4 py-3 text-xs text-ink-muted font-medium">{t('reports.date')}</th>
+                  <th className="text-start px-4 py-3 text-xs text-ink-muted font-medium">{t('reports.returnNo')}</th>
+                  <th className="text-start px-4 py-3 text-xs text-ink-muted font-medium">{t('reports.againstBill')}</th>
+                  <th className="text-start px-4 py-3 text-xs text-ink-muted font-medium">{t('reports.customer')}</th>
+                  <th className="text-end px-4 py-3 text-xs text-ink-muted font-medium">{t('reports.itemsCount')}</th>
+                  <th className="text-start px-4 py-3 text-xs text-ink-muted font-medium">{t('reports.refundMode')}</th>
+                  <th className="text-end px-4 py-3 text-xs text-ink-muted font-medium">{t('reports.total')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {returnRows.map(r => (
+                  <tr key={r.id} className="border-b border-line last:border-0 hover:bg-page/50 transition-colors">
+                    <td className="px-4 py-3 text-ink-muted">{new Date(r.date).toLocaleDateString('en-PK')}</td>
+                    <td className="px-4 py-3 font-medium text-ink">{r.return_no}</td>
+                    <td className="px-4 py-3 text-ink-muted">{r.sale?.invoice_no ?? '—'}</td>
+                    <td className="px-4 py-3 text-ink">{r.customer?.name ?? t('pos.walkIn')}</td>
+                    <td className="px-4 py-3 text-end tabular-nums text-ink-muted">{r.item_count}</td>
+                    <td className="px-4 py-3">
+                      <span className={cn(
+                        'text-xs px-2 py-0.5 rounded-full',
+                        r.refund_mode === 'cash' ? 'bg-cash/10 text-cash' : 'bg-due/10 text-due',
+                      )}>
+                        {r.refund_mode === 'cash' ? t('returns.cash') : t('returns.khata')}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-end font-semibold tabular-nums text-due">{formatPKR(r.total)}</td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-line bg-page font-bold">
+                  <td className="px-4 py-3 text-ink" colSpan={6}>{t('reports.grandTotal')}</td>
+                  <td className="px-4 py-3 text-end tabular-nums text-due">{formatPKR(returnsTotal)}</td>
+                </tr>
+              </tbody>
+            </table>
+          )
+        )}
+
+        {/* ── Expenses (admin) ── */}
+        {activeTab === 'expenses' && isAdmin && (
+          expensesQuery.isLoading ? <Spinner /> :
+          (expenses?.by_category.length ?? 0) === 0
+            ? <p className="p-10 text-center text-sm text-ink-muted">{t('reports.noData')}</p> : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-line bg-page">
+                  <th className="text-start px-4 py-3 text-xs text-ink-muted font-medium">{t('reports.category')}</th>
+                  <th className="text-end px-4 py-3 text-xs text-ink-muted font-medium">{t('reports.entries')}</th>
+                  <th className="text-end px-4 py-3 text-xs text-ink-muted font-medium">{t('reports.total')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {expenses!.by_category.map(c => (
+                  <tr key={c.category} className="border-b border-line last:border-0 hover:bg-page/50 transition-colors">
+                    <td className="px-4 py-3 text-ink font-medium">{c.category}</td>
+                    <td className="px-4 py-3 text-end tabular-nums text-ink-muted">{c.count}</td>
+                    <td className="px-4 py-3 text-end font-semibold tabular-nums text-due">{formatPKR(c.total)}</td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-line bg-page font-bold">
+                  <td className="px-4 py-3 text-ink" colSpan={2}>{t('reports.grandTotal')}</td>
+                  <td className="px-4 py-3 text-end tabular-nums text-due">{formatPKR(expensesTotal)}</td>
                 </tr>
               </tbody>
             </table>

@@ -8,6 +8,9 @@ import LoginPage from './features/auth/LoginPage'
 const DashboardPage  = lazy(() => import('./features/dashboard/DashboardPage'))
 const ProductsPage   = lazy(() => import('./features/products/ProductsPage'))
 const SalesPage      = lazy(() => import('./features/sales/SalesPage'))
+const DayClosePage   = lazy(() => import('./features/dayclose/DayClosePage'))
+const ExpensesPage   = lazy(() => import('./features/expenses/ExpensesPage'))
+const StockAdjustPage = lazy(() => import('./features/stock/StockAdjustPage'))
 const CustomersPage  = lazy(() => import('./features/customers/CustomersPage'))
 const SuppliersPage  = lazy(() => import('./features/suppliers/SuppliersPage'))
 const PurchasesPage  = lazy(() => import('./features/purchases/PurchasesPage'))
@@ -37,10 +40,13 @@ export default function App() {
             {/* Routes accessible to all authenticated users (admin + employee) */}
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/sales"     element={<SalesPage />} />
+            <Route path="/day-close" element={<DayClosePage />} />
+            <Route path="/expenses"  element={<ExpensesPage />} />
 
             {/* Admin-only routes — employees are redirected to /dashboard */}
             <Route element={<RequireAdmin />}>
               <Route path="/products"  element={<ProductsPage />} />
+              <Route path="/stock"     element={<StockAdjustPage />} />
               <Route path="/customers" element={<CustomersPage />} />
               <Route path="/reports"   element={<ReportsPage />} />
               <Route path="/suppliers" element={<SuppliersPage />} />
