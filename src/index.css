@@ -17,6 +17,16 @@
   .surface-alt {
     @apply bg-page;
   }
+
+  /* Scrolls, but the bar itself is invisible and takes no width — used for
+     dropdowns where a gutter would eat into the row and spoil the alignment. */
+  .no-scrollbar {
+    scrollbar-width: none;          /* Firefox */
+    -ms-overflow-style: none;       /* old Edge */
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;                  /* Chrome / Safari */
+  }
 }
 
 @layer base {

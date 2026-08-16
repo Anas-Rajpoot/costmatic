@@ -154,6 +154,17 @@ export default function SalesPage() {
   const [showCamera, setShowCamera] = useState(false)
   const [showReturn, setShowReturn] = useState(false)
   const [highlight, setHighlight] = useState(0) // keyboard-selected suggestion
+  const suggestionListRef = useRef<HTMLUListElement>(null)
+
+  // The suggestion list is capped in height, so arrowing past the last visible
+  // row has to bring it into view — otherwise the selection walks off the
+  // bottom and the shopkeeper is choosing an item they cannot see. 'nearest'
+  // scrolls the list by one row instead of jumping the whole page.
+  useEffect(() => {
+    if (!showSuggestions) return
+    const row = suggestionListRef.current?.children[highlight] as HTMLElement | undefined
+    row?.scrollIntoView({ block: 'nearest' })
+  }, [highlight, showSuggestions])
 
   // ── Keyboard ──
   const [selectedKey, setSelectedKey] = useState<number | null>(null) // highlighted cart line
@@ -891,10 +902,12 @@ export default function SalesPage() {
             <AnimatePresence>
               {showSuggestions && suggestions.length > 0 && (
                 <motion.ul
+                  ref={suggestionListRef}
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -4 }}
-                  className="absolute z-30 top-full mt-1 w-full bg-surface border border-line rounded-card shadow-lg overflow-hidden"
+                  className="absolute z-30 top-full mt-1 w-full bg-surface border border-line rounded-card shadow-lg
+                             max-h-96 overflow-y-auto overscroll-contain no-scrollbar"
                 >
                   {suggestions.map((p, i) => {
                     // Price shown is for the unit this mode would actually bill in.
@@ -1256,7 +1269,7 @@ export default function SalesPage() {
                       className="w-full h-7 rounded-sm border border-line bg-page px-2 text-xs text-ink placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand"
                     />
                   </div>
-                  <div className="max-h-40 overflow-y-auto">
+                  <div className="max-h-40 overflow-y-auto overscroll-contain no-scrollbar">
                     <button
                       onClick={() => selectCustomer(null)}
                       className="w-full text-start px-3 py-2 text-sm text-ink-muted hover:bg-brand/5 transition-colors"
