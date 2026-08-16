@@ -7,6 +7,14 @@ interface AuthContextValue {
   session: Session | null
   profile: Profile | null
   isLoading: boolean
+  /**
+   * True while the profile row is still in flight. The session resolves first
+   * and the profile follows on its own request, so anything that branches on
+   * `role` has to wait for this — reading it too early sees null and treats an
+   * admin as an employee. Goes false even when the fetch fails, so a failure
+   * ends in a decision rather than a spinner that never stops.
+   */
+  profileLoading: boolean
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
 }
@@ -58,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [profileLoading, setProfileLoading] = useState(true)
 
   // Bootstrap the session + subscribe to auth changes.
   // IMPORTANT: never `await` another supabase call inside onAuthStateChange — the
@@ -101,11 +110,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!userId) {
       setProfile(null)
+      setProfileLoading(false)
       return
     }
     let active = true
+    setProfileLoading(true)
     loadProfile(userId).then(p => {
-      if (active) setProfile(p)
+      if (!active) return
+      setProfile(p)
+      setProfileLoading(false)
     })
     return () => {
       active = false
@@ -161,7 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, profile, isLoading, signIn, signOut }}>
+    <AuthContext.Provider value={{ session, profile, isLoading, profileLoading, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   )
