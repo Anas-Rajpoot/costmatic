@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -7,6 +8,8 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '@/features/auth/AuthContext'
+import { useSettings } from '@/features/settings/hooks/useSettings'
+import { APP_NAME } from '@/lib/brand'
 import { cn } from '@/lib/utils'
 
 interface NavItem {
@@ -40,15 +43,25 @@ interface Props {
 function SidebarInner({ onClose, showClose }: { onClose: () => void; showClose: boolean }) {
   const { t } = useTranslation()
   const { profile } = useAuth()
+  const { data: settings = {} } = useSettings()
   const isAdmin = profile?.role === 'admin'
   const visible = navItems.filter(item => !item.adminOnly || isAdmin)
+
+  // The shopkeeper's own board, not the software's. Falls back to the app name
+  // until Settings → Shop Info has been filled in.
+  const shopName = settings.shop_name?.trim() || APP_NAME
+
+  // Keep the browser tab in step with it, so a pinned tab is identifiable.
+  useEffect(() => { document.title = shopName }, [shopName])
 
   return (
     <aside className="w-64 bg-brand-dark flex flex-col h-full">
       {/* Logo — only shown on desktop (drawer starts below TopBar on mobile) */}
       {!showClose && (
         <div className="h-16 flex items-center px-5 border-b border-white/10 shrink-0">
-          <span className="text-accent font-semibold text-lg tracking-wide">Costmatic</span>
+          <span className="text-accent font-semibold text-lg tracking-wide truncate" title={shopName}>
+            {shopName}
+          </span>
         </div>
       )}
 

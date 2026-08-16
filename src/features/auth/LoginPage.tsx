@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from './AuthContext'
+import { APP_NAME } from '@/lib/brand'
 
 export default function LoginPage() {
   const { t } = useTranslation()
@@ -36,7 +37,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-page flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <span className="text-2xl font-semibold text-accent tracking-wide">Costmatic</span>
+          <span className="text-2xl font-semibold text-accent tracking-wide">{APP_NAME}</span>
           <p className="text-ink-muted text-sm mt-1">Wholesale Shop Manager</p>
         </div>
 
