@@ -1,10 +1,14 @@
 -- =============================================================
--- Costmatic — catalog seed: soft drinks, ghee, matches, papar, biscuits
+-- Costmatic — catalog seed: ghee, matches, papar, biscuits, detergent
+--
+-- Beverages used to live here as guesses from a WhatsApp list. They are gone:
+-- the real thing is catalog_beverages_pakistan.sql, generated from the
+-- beverage spreadsheet, and that file also deletes these placeholders.
 --
 -- NOT a migration. This is one shop's stock at one moment, so it must not run
 -- against staging or another shop's project. Apply it by hand, once:
 --
---   psql "$DATABASE_URL" -f supabase/seeds/catalog_2026_08_beverages_grocery.sql
+--   psql "$DATABASE_URL" -f supabase/seeds/catalog_2026_08_grocery.sql
 --
 -- Safe to run twice: every product is skipped if the name already exists.
 --
@@ -20,7 +24,8 @@
 -- ── Products left INACTIVE on purpose ───────────────────────
 -- Anything without a selling price is inserted with is_active = false so it
 -- can never be billed at Rs 0 by accident. Price it in Products, then tick it
--- active. Every soft drink is in this state — only pack sizes were supplied.
+-- active. Sooper (box price missing) and Surf Excel (single-piece price
+-- missing) are waiting on those figures.
 -- =============================================================
 
 do $$
@@ -28,49 +33,6 @@ declare
   -- [name_en, name_ur, category_en, base_unit, is_active,
   --   [ [unit_name, factor, retail_price, wholesale_price], ... ] ]
   v_items jsonb := '[
-    ["Gourmet Cola 1 Litre","گورمے کولا ۱ لیٹر","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",6,0,0]]],
-    ["Gourmet Cola 1.5 Litre","گورمے کولا ۱.۵ لیٹر","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",6,0,0]]],
-    ["Gourmet Jumbo","گورمے جمبو","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",4,0,0]]],
-    ["Gourmet Buddy","گورمے بڈی","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",12,0,0]]],
-    ["7Up 1 Litre","سیون اپ ۱ لیٹر","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",6,0,0]]],
-    ["7Up 1.5 Litre","سیون اپ ۱.۵ لیٹر","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",6,0,0]]],
-    ["7Up Jumbo","سیون اپ جمبو","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",6,0,0]]],
-    ["7Up Buddy","سیون اپ بڈی","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",12,0,0]]],
-    ["7Up Regular","سیون اپ ریگولر","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",24,0,0]]],
-    ["Sting Buddy","اسٹنگ بڈی","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",12,0,0]]],
-    ["Sting Regular","اسٹنگ ریگولر","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",24,0,0]]],
-    ["Mountain Dew 1 Litre","ماؤنٹین ڈیو ۱ لیٹر","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",6,0,0]]],
-    ["Mountain Dew 1.5 Litre","ماؤنٹین ڈیو ۱.۵ لیٹر","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",6,0,0]]],
-    ["Mountain Dew Jumbo","ماؤنٹین ڈیو جمبو","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",6,0,0]]],
-    ["Next Cola 1 Litre","نیکسٹ کولا ۱ لیٹر","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",6,0,0]]],
-    ["Next Cola 1.5 Litre","نیکسٹ کولا ۱.۵ لیٹر","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",6,0,0]]],
-    ["Next Cola Jumbo","نیکسٹ کولا جمبو","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",4,0,0]]],
-    ["Coca-Cola 1 Litre","کوکا کولا ۱ لیٹر","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",6,0,0]]],
-    ["Coca-Cola 1.5 Litre","کوکا کولا ۱.۵ لیٹر","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",6,0,0]]],
-    ["Coca-Cola Jumbo","کوکا کولا جمبو","Soft Drinks","piece",false,
-      [["piece",1,0,0],["pack",6,0,0]]],
-    ["Nestle Juice","نیسلے جوس","Juices","piece",false,
-      [["piece",1,0,0],["pack",24,0,0]]],
-
     ["Samoli Papar","سمولی پاپڑ","Popcorn & Papad","pack",true,
       [["pack",1,100,100],["bundle",6,560,560],["bora",60,5600,5600]]],
     ["Hockey Matches","ہاکی ماچس","Matches & Lighters","piece",true,

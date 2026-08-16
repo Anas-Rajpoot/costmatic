@@ -151,6 +151,9 @@ export interface Product {
   name_en: string
   name_ur: string
   category_id: string | null
+  /** Who the shop orders from — PepsiCo Pakistan. Distinct from brand. */
+  company: string | null
+  /** What is on the bottle — 7up. */
   brand: string | null
   barcode: string | null
   image_url: string | null

@@ -24,6 +24,15 @@ export default function ProductsPage() {
 
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState('')
+  // The catalog now carries a whole market's worth of beverages, most of it
+  // parked inactive. Default to showing only what the shop actually sells —
+  // seeing 166 dormant SKUs on open would bury the real stock.
+  const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active')
+  const [companyFilter, setCompanyFilter] = useState('')
+
+  const companies = [...new Set(
+    products.map(p => (p.company ?? '').trim()).filter(Boolean),
+  )].sort((a, b) => a.localeCompare(b))
   const [showCatDialog, setShowCatDialog] = useState(false)
   const [drawerProduct, setDrawerProduct] = useState<Product | null | undefined>(undefined) // undefined = closed, null = new
   const [confirmDelId, setConfirmDelId] = useState<string | null>(null)
@@ -34,9 +43,13 @@ export default function ProductsPage() {
       || p.name_en.toLowerCase().includes(q)
       || p.name_ur.includes(q)
       || (p.brand ?? '').toLowerCase().includes(q)
+      || (p.company ?? '').toLowerCase().includes(q)
       || (p.barcode ?? '').includes(q)
     const matchCat = !catFilter || p.category_id === catFilter
-    return matchSearch && matchCat
+    const matchCompany = !companyFilter || (p.company ?? '') === companyFilter
+    const matchStatus = statusFilter === 'all'
+      || (statusFilter === 'active' ? p.is_active : !p.is_active)
+    return matchSearch && matchCat && matchCompany && matchStatus
   })
 
   async function handleDelete(id: string) {
@@ -83,8 +96,8 @@ export default function ProductsPage() {
         />
       </div>
 
-      {/* Search + filter */}
-      <div className="flex items-center gap-3 mb-4">
+      {/* Search + filters */}
+      <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="relative flex-1 max-w-xs">
           <Search size={15} className="absolute start-3 top-1/2 -translate-y-1/2 text-ink-muted pointer-events-none" />
           <input
@@ -104,6 +117,46 @@ export default function ProductsPage() {
             <option key={o.id} value={o.id}>{o.depth ? `   — ${o.label}` : o.label}</option>
           ))}
         </select>
+
+        {/* Company — the shop orders by supplier line, not by brand */}
+        {companies.length > 0 && (
+          <select
+            value={companyFilter}
+            onChange={e => setCompanyFilter(e.target.value)}
+            className="h-9 rounded-input border border-line bg-surface px-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand/30"
+          >
+            <option value="">{t('products.allCompanies')}</option>
+            {companies.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
+
+        {/* Active / inactive — a segmented control, because this one is
+            switched constantly while pricing up a newly seeded range. */}
+        <div className="flex rounded-input border border-line overflow-hidden">
+          {([
+            ['active',   t('products.filterActive')],
+            ['inactive', t('products.filterInactive')],
+            ['all',      t('products.filterAll')],
+          ] as const).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setStatusFilter(id)}
+              className={cn(
+                'h-9 px-3 text-sm font-medium transition-colors',
+                statusFilter === id
+                  ? 'bg-brand text-white'
+                  : 'bg-surface text-ink-muted hover:text-brand',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <span className="text-xs text-ink-muted tabular ms-auto">
+          {filtered.length} / {products.length}
+        </span>
       </div>
 
       {/* Products table */}

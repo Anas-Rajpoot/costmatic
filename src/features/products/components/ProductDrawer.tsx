@@ -26,6 +26,7 @@ interface FormState {
   name_ur: string
   category_id: string
   brand: string
+  company: string
   barcode: string
   product_kind: ProductKind
   base_unit: string
@@ -42,6 +43,7 @@ const BLANK: FormState = {
   name_ur: '',
   category_id: '',
   brand: '',
+  company: '',
   barcode: '',
   product_kind: 'standard',
   base_unit: 'piece',
@@ -88,6 +90,7 @@ function productToForm(p: Product): FormState {
     name_ur: p.name_ur,
     category_id: p.category_id ?? '',
     brand: p.brand ?? '',
+    company: p.company ?? '',
     barcode: p.barcode ?? '',
     product_kind: p.product_kind === 'loose' ? 'loose' : 'standard',
     base_unit: p.base_unit || 'piece',
@@ -186,6 +189,15 @@ export default function ProductDrawer({ product, onClose }: Props) {
   const save = useSaveProduct()
 
   const isEdit = !!product
+
+  // Suggest what the catalog already uses, so "PepsiCo Pakistan" does not end
+  // up stored three ways and split the company filter into three entries.
+  const knownCompanies = [...new Set(
+    products.map(p => (p.company ?? '').trim()).filter(Boolean),
+  )].sort((a, b) => a.localeCompare(b))
+  const knownBrands = [...new Set(
+    products.map(p => (p.brand ?? '').trim()).filter(Boolean),
+  )].sort((a, b) => a.localeCompare(b))
 
   const [form, setForm] = useState<FormState>(product ? productToForm(product) : BLANK)
   const [units, setUnits] = useState<UnitRow[]>(
@@ -312,6 +324,7 @@ export default function ProductDrawer({ product, onClose }: Props) {
           name_ur: form.name_ur.trim(),
           category_id: form.category_id || null,
           brand: form.brand.trim() || null,
+          company: form.company.trim() || null,
           barcode: form.barcode.trim() || null,
           image_url: null,
           base_unit: form.base_unit,
@@ -479,9 +492,30 @@ export default function ProductDrawer({ product, onClose }: Props) {
                   <input
                     value={form.brand}
                     onChange={e => setField('brand', e.target.value)}
+                    list="product-brands"
                     className="w-full h-10 rounded-input border border-line bg-surface px-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand transition-colors"
                   />
+                  <datalist id="product-brands">
+                    {knownBrands.map(b => <option key={b} value={b} />)}
+                  </datalist>
                 </div>
+              </div>
+
+              {/* Company is who you order from; brand is what is on the bottle.
+                  Both are suggested from what the catalog already uses, so the
+                  same manufacturer is not spelled three different ways. */}
+              <div>
+                <label className="block text-sm text-ink-muted mb-1.5">{t('products.company')}</label>
+                <input
+                  value={form.company}
+                  onChange={e => setField('company', e.target.value)}
+                  list="product-companies"
+                  placeholder={t('products.companyHint')}
+                  className="w-full h-10 rounded-input border border-line bg-surface px-3 text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand transition-colors"
+                />
+                <datalist id="product-companies">
+                  {knownCompanies.map(c => <option key={c} value={c} />)}
+                </datalist>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
