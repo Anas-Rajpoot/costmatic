@@ -6,6 +6,7 @@ import { usePurchases } from './hooks/usePurchases'
 import PurchaseForm from './components/PurchaseForm'
 import { formatPKR } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { PageFade, PageHeader } from '@/components/Page'
 
 export default function PurchasesPage() {
   const { t } = useTranslation()
@@ -13,22 +14,22 @@ export default function PurchasesPage() {
   const [showForm, setShowForm] = useState(false)
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-btn bg-brand-soft flex items-center justify-center">
-            <ClipboardList size={18} className="text-brand" />
-          </div>
-          <h1 className="text-xl font-semibold text-ink">{t('purchases.title')}</h1>
-          <span className="text-sm text-ink-muted tabular">({purchases.length})</span>
-        </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 h-9 px-4 rounded-btn bg-brand text-white text-sm font-semibold hover:bg-brand-dark transition-colors"
-        >
-          <Plus size={15} />
-          {t('purchases.new')}
-        </button>
+    <PageFade>
+      <div className="mb-6">
+        <PageHeader
+          icon={<ClipboardList size={18} className="text-brand" />}
+          title={t('purchases.title')}
+          count={purchases.length}
+          actions={
+            <button
+              onClick={() => setShowForm(true)}
+              className="flex items-center gap-2 h-9 px-4 rounded-btn bg-brand text-white text-sm font-semibold hover:bg-brand-dark transition-colors"
+            >
+              <Plus size={15} />
+              {t('purchases.new')}
+            </button>
+          }
+        />
       </div>
 
       <div className="bg-surface rounded-card border border-line overflow-x-auto">
@@ -79,6 +80,6 @@ export default function PurchasesPage() {
       <AnimatePresence>
         {showForm && <PurchaseForm onClose={() => setShowForm(false)} />}
       </AnimatePresence>
-    </div>
+    </PageFade>
   )
 }

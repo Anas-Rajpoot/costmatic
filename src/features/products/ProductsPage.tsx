@@ -10,6 +10,7 @@ import { formatPKR, formatQty, unitShort } from '@/lib/format'
 import { useAuth } from '@/features/auth/AuthContext'
 import type { Product } from '@/types'
 import { cn } from '@/lib/utils'
+import { PageFade, PageHeader } from '@/components/Page'
 
 export default function ProductsPage() {
   const { t, i18n } = useTranslation()
@@ -57,32 +58,29 @@ export default function ProductsPage() {
   }
 
   return (
-    <div>
-      {/* Page header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-btn bg-brand-soft flex items-center justify-center">
-            <Package size={18} className="text-brand" />
-          </div>
-          <h1 className="text-xl font-semibold text-ink">{t('products.title')}</h1>
-          <span className="text-sm text-ink-muted tabular">({products.length})</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowCatDialog(true)}
-            className="flex items-center gap-2 h-9 px-4 rounded-btn border border-line text-ink-muted text-sm font-medium hover:border-brand hover:text-brand transition-colors"
-          >
-            <Settings2 size={15} />
-            {t('products.manageCategories')}
-          </button>
-          <button
-            onClick={() => setDrawerProduct(null)}
-            className="flex items-center gap-2 h-9 px-4 rounded-btn bg-brand text-white text-sm font-semibold hover:bg-brand-dark transition-colors"
-          >
-            <Plus size={15} />
-            {t('products.addProduct')}
-          </button>
-        </div>
+    <PageFade>
+      <div className="mb-6">
+        <PageHeader
+          icon={<Package size={18} className="text-brand" />}
+          title={t('products.title')}
+          count={products.length}
+          actions={<>
+            <button
+              onClick={() => setShowCatDialog(true)}
+              className="flex items-center gap-2 h-9 px-4 rounded-btn border border-line text-ink-muted text-sm font-medium hover:border-brand hover:text-brand transition-colors"
+            >
+              <Settings2 size={15} />
+              {t('products.manageCategories')}
+            </button>
+            <button
+              onClick={() => setDrawerProduct(null)}
+              className="flex items-center gap-2 h-9 px-4 rounded-btn bg-brand text-white text-sm font-semibold hover:bg-brand-dark transition-colors"
+            >
+              <Plus size={15} />
+              {t('products.addProduct')}
+            </button>
+          </>}
+        />
       </div>
 
       {/* Search + filter */}
@@ -271,6 +269,6 @@ export default function ProductsPage() {
           />
         )}
       </AnimatePresence>
-    </div>
+    </PageFade>
   )
 }

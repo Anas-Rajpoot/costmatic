@@ -9,6 +9,7 @@ import SupplierLedger from './components/SupplierLedger'
 import { formatPKR } from '@/lib/format'
 import type { Supplier } from '@/types'
 import { cn } from '@/lib/utils'
+import { PageFade, PageHeader } from '@/components/Page'
 
 export default function SuppliersPage() {
   const { t } = useTranslation()
@@ -28,26 +29,24 @@ export default function SuppliersPage() {
   const totalOwed = suppliers.reduce((s, x) => s + Number(x.current_balance), 0)
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-btn bg-brand-soft flex items-center justify-center">
-            <Truck size={18} className="text-brand" />
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold text-ink">{t('suppliers.title')}</h1>
-            {totalOwed > 0 && (
-              <p className="text-xs text-due mt-0.5">{t('suppliers.youOwe')} {formatPKR(totalOwed)}</p>
-            )}
-          </div>
-        </div>
-        <button
-          onClick={() => setDialog(null)}
-          className="flex items-center gap-2 h-9 px-4 rounded-btn bg-brand text-white text-sm font-semibold hover:bg-brand-dark transition-colors"
-        >
-          <Plus size={15} />
-          {t('suppliers.add')}
-        </button>
+    <PageFade>
+      <div className="mb-6">
+        <PageHeader
+          icon={<Truck size={18} className="text-brand" />}
+          title={t('suppliers.title')}
+          subtitle={totalOwed > 0
+            ? <span className="text-due">{t('suppliers.youOwe')} {formatPKR(totalOwed)}</span>
+            : undefined}
+          actions={
+            <button
+              onClick={() => setDialog(null)}
+              className="flex items-center gap-2 h-9 px-4 rounded-btn bg-brand text-white text-sm font-semibold hover:bg-brand-dark transition-colors"
+            >
+              <Plus size={15} />
+              {t('suppliers.add')}
+            </button>
+          }
+        />
       </div>
 
       <div className="bg-surface rounded-card border border-line overflow-x-auto">
@@ -141,6 +140,6 @@ export default function SuppliersPage() {
         {paying && <PaySupplierDialog supplier={paying} onClose={() => setPaying(null)} />}
         {ledger && <SupplierLedger supplier={ledger} onClose={() => setLedger(null)} />}
       </AnimatePresence>
-    </div>
+    </PageFade>
   )
 }

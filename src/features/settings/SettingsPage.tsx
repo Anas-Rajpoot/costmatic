@@ -6,6 +6,7 @@ import { useSettings, useSaveSettings, useAuditLog } from './hooks/useSettings'
 import { useProducts } from '@/features/products/hooks/useProducts'
 import { escapeHtml } from '@/lib/escapeHtml'
 import { cn } from '@/lib/utils'
+import { PageFade, PageHeader } from '@/components/Page'
 
 type Tab = 'shop' | 'prefs' | 'labels' | 'audit'
 
@@ -21,8 +22,8 @@ export default function SettingsPage() {
   ]
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <h1 className="text-2xl font-bold text-ink">{t('settings.title')}</h1>
+    <PageFade className="max-w-3xl mx-auto space-y-6">
+      <PageHeader title={t('settings.title')} />
 
       <div className="flex gap-1 bg-surface-alt rounded-card p-1">
         {tabs.map(tb => (
@@ -46,7 +47,7 @@ export default function SettingsPage() {
       {tab === 'prefs'  && <PreferencesTab />}
       {tab === 'labels' && <BarcodeLabelPrinter />}
       {tab === 'audit'  && <AuditLogViewer />}
-    </div>
+    </PageFade>
   )
 }
 

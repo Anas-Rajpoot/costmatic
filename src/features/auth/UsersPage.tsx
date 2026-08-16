@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/features/auth/AuthContext'
 import type { Profile, Role } from '@/types'
 import { cn } from '@/lib/utils'
+import { PageFade, PageHeader } from '@/components/Page'
 
 // Calls the admin-users edge function (service role, admin-verified server-side).
 async function invokeAdmin(body: Record<string, unknown>) {
@@ -161,21 +162,21 @@ export default function UsersPage() {
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-btn bg-brand-soft flex items-center justify-center">
-            <UserCog size={18} className="text-brand" />
-          </div>
-          <h1 className="text-xl font-semibold text-ink">{t('users.title')}</h1>
-        </div>
-        <button
-          onClick={() => { setAddForm(BLANK_EMPLOYEE); setAddError(''); setShowAdd(true) }}
-          className="flex items-center gap-2 h-9 px-4 rounded-btn bg-brand text-white text-sm font-semibold hover:bg-brand-dark transition-colors"
-        >
-          <Plus size={15} />
-          {t('users.addEmployee')}
-        </button>
+    <PageFade>
+      <div className="mb-6">
+        <PageHeader
+          icon={<UserCog size={18} className="text-brand" />}
+          title={t('users.title')}
+          actions={
+            <button
+              onClick={() => { setAddForm(BLANK_EMPLOYEE); setAddError(''); setShowAdd(true) }}
+              className="flex items-center gap-2 h-9 px-4 rounded-btn bg-brand text-white text-sm font-semibold hover:bg-brand-dark transition-colors"
+            >
+              <Plus size={15} />
+              {t('users.addEmployee')}
+            </button>
+          }
+        />
       </div>
 
       <div className="flex items-start gap-2 bg-info-soft border border-info/20 text-info rounded-card px-4 py-3 text-sm mb-6">
@@ -447,6 +448,6 @@ export default function UsersPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageFade>
   )
 }

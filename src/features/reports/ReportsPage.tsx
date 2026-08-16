@@ -11,6 +11,7 @@ import { usePeriodExpenses } from '@/features/expenses/hooks/useExpenses'
 import { formatPKR, formatQty, unitShort } from '@/lib/format'
 import { downloadCSV } from '@/lib/exportCSV'
 import { cn } from '@/lib/utils'
+import { PageFade, PageHeader } from '@/components/Page'
 
 type Tab = 'sales' | 'items' | 'returns' | 'expenses' | 'receivables' | 'payables' | 'lowstock'
 
@@ -93,9 +94,8 @@ export default function ReportsPage() {
   ]
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <h1 className="text-2xl font-bold text-ink">{t('reports.title')}</h1>
+    <PageFade className="space-y-6">
+      <PageHeader title={t('reports.title')} />
 
       {/* Date range */}
       <div className="flex items-end gap-3 flex-wrap">
@@ -493,6 +493,6 @@ export default function ReportsPage() {
           )
         )}
       </div>
-    </div>
+    </PageFade>
   )
 }

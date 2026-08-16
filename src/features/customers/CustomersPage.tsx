@@ -10,6 +10,7 @@ import type { Customer } from '@/types'
 import CustomerDialog from './components/CustomerDialog'
 import PayCustomerDialog from './components/PayCustomerDialog'
 import CustomerLedger from './components/CustomerLedger'
+import { PageFade, PageHeader } from '@/components/Page'
 
 export default function CustomersPage() {
   const { t } = useTranslation()
@@ -38,21 +39,20 @@ export default function CustomersPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-ink">{t('customers.title')}</h1>
-          <p className="text-sm text-ink-muted mt-0.5">{t('customers.totalCustomers')}: {customers.length}</p>
-        </div>
-        <button
-          onClick={() => setDialogCustomer(null)}
-          className="h-9 px-4 bg-brand text-white rounded-btn text-sm font-semibold hover:bg-brand-dark transition-colors flex items-center gap-2"
-        >
-          <Plus size={16} />
-          {t('customers.add')}
-        </button>
-      </div>
+    <PageFade className="space-y-6">
+      <PageHeader
+        title={t('customers.title')}
+        subtitle={`${t('customers.totalCustomers')}: ${customers.length}`}
+        actions={
+          <button
+            onClick={() => setDialogCustomer(null)}
+            className="h-9 px-4 bg-brand text-white rounded-btn text-sm font-semibold hover:bg-brand-dark transition-colors flex items-center gap-2"
+          >
+            <Plus size={16} />
+            {t('customers.add')}
+          </button>
+        }
+      />
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 gap-4">
@@ -239,6 +239,6 @@ export default function CustomersPage() {
           </div>
         )}
       </AnimatePresence>
-    </div>
+    </PageFade>
   )
 }
