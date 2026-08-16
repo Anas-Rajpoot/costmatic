@@ -121,23 +121,29 @@ function productToUnits(p: Product): UnitRow[] {
 
 interface PresetUnit { label: string; unit_name: string; factor: number }
 
-// Standard bulk presets adapt to the base unit: cigarette (pack) → outer/dandee,
-// beverage (bottle) → crate, eggs/biscuits (piece) → tray/roll/carton.
+// Bulk presets in the vocabulary a Pakistani wholesaler actually uses at the
+// counter — lari (sachet strip), bundle, bora (sack), peti (crate), dandee
+// (cigarette outer). The factor is only a starting point: box is 8 in a biscuit
+// carton and 10 in a matchbox bundle, so the shopkeeper edits it in the row.
 function standardPresets(base_unit: string): PresetUnit[] {
   if (base_unit === 'pack') return [
-    { label: 'Outer / Dandee (10)', unit_name: 'outer', factor: 10 },
+    { label: 'Dandee / Outer (10)', unit_name: 'outer', factor: 10 },
     { label: 'Carton (50)', unit_name: 'carton', factor: 50 },
   ]
   if (base_unit === 'bottle') return [
-    { label: 'Crate (24)', unit_name: 'crate', factor: 24 },
-    { label: 'Case (12)', unit_name: 'case', factor: 12 },
+    { label: 'Pack (6)', unit_name: 'pack', factor: 6 },
+    { label: 'Pack (12)', unit_name: 'pack12', factor: 12 },
+    { label: 'Peti / Crate (24)', unit_name: 'peti', factor: 24 },
   ]
   return [
     { label: 'Dozen (12)', unit_name: 'dozen', factor: 12 },
+    { label: 'Lari (16)', unit_name: 'lari', factor: 16 },
+    { label: 'Box (10)', unit_name: 'box', factor: 10 },
+    { label: 'Pack (6)', unit_name: 'pack', factor: 6 },
     { label: 'Tray (30)', unit_name: 'tray', factor: 30 },
-    { label: 'Outer (10)', unit_name: 'outer', factor: 10 },
-    { label: 'Roll (24)', unit_name: 'roll', factor: 24 },
+    { label: 'Bundle (50)', unit_name: 'bundle', factor: 50 },
     { label: 'Carton (24)', unit_name: 'carton', factor: 24 },
+    { label: 'Bora (60)', unit_name: 'bora', factor: 60 },
   ]
 }
 
@@ -152,13 +158,13 @@ function loosePresets(base_unit: string): PresetUnit[] {
     { label: '16 L Tin', unit_name: '16L', factor: 16 },
   ]
   return [
-    { label: '250 g', unit_name: '250g', factor: 0.25 },
-    { label: '500 g', unit_name: '500g', factor: 0.5 },
+    { label: 'Pao (250 g)', unit_name: '250g', factor: 0.25 },
+    { label: 'Aadha (500 g)', unit_name: '500g', factor: 0.5 },
     { label: '2 kg', unit_name: '2kg', factor: 2 },
     { label: '5 kg', unit_name: '5kg', factor: 5 },
     { label: '10 kg', unit_name: '10kg', factor: 10 },
     { label: '25 kg', unit_name: '25kg', factor: 25 },
-    { label: '50 kg Bag', unit_name: '50kg', factor: 50 },
+    { label: 'Tora / Bora (50 kg)', unit_name: '50kg', factor: 50 },
   ]
 }
 
@@ -188,6 +194,10 @@ export default function ProductDrawer({ product, onClose }: Props) {
   const [addingUnit, setAddingUnit] = useState(false)
   const [newUnit, setNewUnit] = useState({ unit_name: 'dozen', factor: '12', wholesale_price: '0', retail_price: '0', custom: '' })
   const [errors, setErrors] = useState<Record<string, string>>({})
+  // Two steps: what the thing IS, then how it is packed and priced. Splitting
+  // them keeps the units table out of the way until the name is settled — that
+  // table is the part shopkeepers find hardest, and it deserves a clear screen.
+  const [step, setStep] = useState<1 | 2>(1)
   const [submitErr, setSubmitErr] = useState('')
   const [showScanner, setShowScanner] = useState(false)
 
@@ -275,6 +285,10 @@ export default function ProductDrawer({ product, onClose }: Props) {
       errs.units = t('products.factorPositive')
     }
     setErrors(errs)
+    // Send the user to the step that actually holds the problem, so a failed
+    // save never leaves them staring at a screen with no visible error.
+    if (errs.name_en || errs.name_ur) setStep(1)
+    else if (errs.units) setStep(2)
     return Object.keys(errs).length === 0
   }
 
@@ -339,22 +353,54 @@ export default function ProductDrawer({ product, onClose }: Props) {
         animate={{ x: 0 }}
         exit={{ x: '100%' }}
         transition={{ type: 'spring', damping: 28, stiffness: 320 }}
-        className="fixed inset-y-0 end-0 w-full max-w-lg bg-surface shadow-2xl z-50 flex flex-col"
+        className="fixed inset-y-0 end-0 w-full max-w-3xl bg-surface shadow-2xl z-50 flex flex-col"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-line shrink-0">
-          <h2 className="font-semibold text-ink">
-            {isEdit ? t('products.editProduct') : t('products.addProduct')}
-          </h2>
-          <button onClick={onClose} className="text-ink-muted hover:text-ink transition-colors">
-            <X size={18} />
-          </button>
+        <div className="px-6 pt-4 pb-3 border-b border-line shrink-0">
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold text-ink">
+              {isEdit ? t('products.editProduct') : t('products.addProduct')}
+            </h2>
+            <button onClick={onClose} className="text-ink-muted hover:text-ink transition-colors">
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Step tabs — clickable, so editing an existing product never forces
+              you to walk back through a wizard to reach the prices. */}
+          <div className="flex gap-2 mt-3">
+            {([1, 2] as const).map(n => {
+              const active = step === n
+              return (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setStep(n)}
+                  className={cn(
+                    'flex items-center gap-2 h-9 px-3 rounded-btn text-sm font-medium transition-colors',
+                    active
+                      ? 'bg-brand-soft text-brand'
+                      : 'text-ink-muted hover:text-brand',
+                  )}
+                >
+                  <span className={cn(
+                    'w-5 h-5 rounded-full grid place-items-center text-[11px] font-semibold shrink-0',
+                    active ? 'bg-brand text-white' : 'bg-line text-ink-muted',
+                  )}>
+                    {n}
+                  </span>
+                  {t(n === 1 ? 'products.stepDetails' : 'products.stepPacks')}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
         {/* Scrollable form body */}
         <form id="product-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-5 space-y-7">
 
-          {/* ── Section 1: Product Details ── */}
+          {/* ── Step 1: Product Details ── */}
+          {step === 1 && (
           <section>
             <h3 className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-3">
               {t('products.sectionBasic')}
@@ -486,8 +532,10 @@ export default function ProductDrawer({ product, onClose }: Props) {
               </div>
             </div>
           </section>
+          )}
 
-          {/* ── Section 2: Pricing & Stock ── */}
+          {/* ── Step 2: Packs, prices and stock ── */}
+          {step === 2 && (<>
           <section>
             <h3 className="text-xs font-semibold text-ink-muted uppercase tracking-wider mb-3">
               {t('products.sectionPricing')}
@@ -751,6 +799,22 @@ export default function ProductDrawer({ product, onClose }: Props) {
               )}
             </div>
 
+            {/* The factor column is abstract. Spelling each pack out in words is
+                what makes a wrong pack size obvious before it reaches the shelf. */}
+            {units.some(u => !u._isBase) && (
+              <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                {units.filter(u => !u._isBase).map(u => (
+                  <li key={u._key} className="text-xs text-ink-muted tabular">
+                    {t('products.packSummary', {
+                      unit: u.unit_name || '—',
+                      qty: Number(u.factor) || 0,
+                      base: baseLabel,
+                    })}
+                  </li>
+                ))}
+              </ul>
+            )}
+
             {!addingUnit && (
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 {/* Quick-add preset packs/units (price starts at 0, fill it in the row) */}
@@ -788,6 +852,7 @@ export default function ProductDrawer({ product, onClose }: Props) {
               </div>
             )}
           </section>
+          </>)}
 
           {submitErr && (
             <div className="text-due text-sm px-3 py-2 bg-due-soft rounded-input border border-due/20">
@@ -800,19 +865,29 @@ export default function ProductDrawer({ product, onClose }: Props) {
         <div className="px-6 py-4 border-t border-line shrink-0 flex gap-3 justify-end">
           <button
             type="button"
-            onClick={onClose}
+            onClick={step === 2 ? () => setStep(1) : onClose}
             className="h-10 px-5 border border-line text-ink-muted rounded-btn text-sm font-medium hover:border-brand hover:text-brand transition-colors"
           >
-            {t('common.cancel')}
+            {step === 2 ? t('common.back') : t('common.cancel')}
           </button>
-          <button
-            type="submit"
-            form="product-form"
-            disabled={save.isPending}
-            className="h-10 px-6 bg-brand text-white rounded-btn text-sm font-semibold hover:bg-brand-dark disabled:opacity-60 transition-colors"
-          >
-            {save.isPending ? t('common.loading') : t('common.save')}
-          </button>
+          {step === 1 ? (
+            <button
+              type="button"
+              onClick={() => setStep(2)}
+              className="h-10 px-6 bg-brand text-white rounded-btn text-sm font-semibold hover:bg-brand-dark transition-colors"
+            >
+              {t('common.next')}
+            </button>
+          ) : (
+            <button
+              type="submit"
+              form="product-form"
+              disabled={save.isPending}
+              className="h-10 px-6 bg-brand text-white rounded-btn text-sm font-semibold hover:bg-brand-dark disabled:opacity-60 transition-colors"
+            >
+              {save.isPending ? t('common.loading') : t('common.save')}
+            </button>
+          )}
         </div>
       </motion.div>
 
