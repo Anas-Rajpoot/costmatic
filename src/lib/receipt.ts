@@ -48,13 +48,13 @@ function metrics(shop: ShopInfo) {
     narrow,
     pad: narrow ? 5 : 4, // mm each side → 48mm / 72mm of print
     px: {
-      body:  narrow ? 11 : 14, // ~3.7mm caps at 203dpi — the size shops print at
-      shop:  narrow ? 13 : 17, // longer shop names still fit on one line
-      sub:   narrow ? 9  : 12,
-      line:  narrow ? 10 : 13,
-      total: narrow ? 14 : 20,
-      khata: narrow ? 12 : 16,
-      urdu:  narrow ? 9  : 12, // Nastaliq reads large for its point size
+      body:  narrow ? 11 : 13, // ~3.4mm caps at 203dpi — still solid on thermal
+      shop:  narrow ? 13 : 16, // longer shop names still fit on one line
+      sub:   narrow ? 9  : 11,
+      line:  narrow ? 10 : 12,
+      total: narrow ? 14 : 17, // the one figure read from arm's length
+      khata: narrow ? 12 : 14,
+      urdu:  narrow ? 9  : 11, // Nastaliq reads large for its point size
     },
   }
 }
@@ -67,18 +67,27 @@ function nameClass(name: string) {
 export function buildReceiptHtml(data: ReceiptData, shop: ShopInfo) {
   const { paper, narrow, pad, px } = metrics(shop)
 
-  // One item = two lines: name + line amount, then quantity and unit price
-  // underneath, closed by a dotted rule. No arithmetic on the paper — just the
-  // name, how many, and the rate. Names all start at the same left edge and
-  // every amount lands in one right-hand column.
+  // Buying one of a thing means the line amount IS the rate, so a second line
+  // would print Rs 580 twice and read like a mistake. Those items get a single
+  // line. The working only appears when there is working to show: two or more,
+  // or a discount — and then it reads as the sum it is, "3 pouch × Rs 580".
   const rows = data.items
     .map(item => {
-      const qty = `${escapeHtml(formatQty(item.quantity))} ${escapeHtml(item.unit_name)}`
-      const rate = `${formatPKR(item.unit_price)}${item.discount_pct > 0 ? ` -${escapeHtml(item.discount_pct)}%` : ''}`
       const nameCls = nameClass(item.product_name)
+      const amount = formatPKR(item.line_total)
+      const showWorking = Number(item.quantity) !== 1 || item.discount_pct > 0
+
+      if (!showWorking) {
+        return `
+      <tr><td class="${nameCls} sep">${escapeHtml(item.product_name)}</td><td class="r nm sep">${amount}</td></tr>`
+      }
+
+      const working = `${escapeHtml(formatQty(item.quantity))} ${escapeHtml(item.unit_name)}`
+        + ` &times; ${formatPKR(item.unit_price)}`
+        + (item.discount_pct > 0 ? ` &minus;${escapeHtml(item.discount_pct)}%` : '')
       return `
-      <tr><td class="${nameCls}">${escapeHtml(item.product_name)}</td><td class="r nm">${formatPKR(item.line_total)}</td></tr>
-      <tr><td class="ln sep">${qty}</td><td class="ln r sep">${rate}</td></tr>`
+      <tr><td class="${nameCls}">${escapeHtml(item.product_name)}</td><td class="r nm">${amount}</td></tr>
+      <tr><td class="ln sep" colspan="2">${working}</td></tr>`
     })
     .join('')
 
@@ -90,7 +99,7 @@ export function buildReceiptHtml(data: ReceiptData, shop: ShopInfo) {
 <title>Receipt ${data.invoice_no}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet">
 <style>
 @page{size:${paper}mm auto;margin:0}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -98,7 +107,7 @@ html,body{width:${paper}mm;background:#fff}
 /* Inter, not a typewriter face: it stays crisp at 203dpi and prints solid at
    weight 500+. Tabular figures keep every amount in one straight column, which
    is the only thing monospace was buying us. */
-body{font-family:'Inter',system-ui,'Segoe UI',Roboto,Arial,sans-serif;font-weight:500;
+body{font-family:'Inter Tight','Inter',system-ui,'Segoe UI',Roboto,Arial,sans-serif;font-weight:500;
   font-size:${px.body}px;line-height:1.45;color:#000;font-variant-numeric:tabular-nums;
   font-feature-settings:'tnum' 1;
   padding:4mm ${pad}mm 12mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -118,7 +127,11 @@ td{vertical-align:top;word-wrap:break-word;overflow-wrap:break-word}
 .r{text-align:right}
 .bold{font-weight:700}
 .tot td{padding:2px 0;font-size:${px.line}px}
-.tot tr.big td{font-size:${px.total}px;font-weight:700;letter-spacing:.2px;padding:4px 0}
+/* The total is the one line a customer checks, so it gets a banded row of its
+   own — light enough that thermal paper renders it as a clean tint, with solid
+   rules top and bottom so it still reads if the shading prints faint. */
+.tot tr.big td{font-size:${px.total}px;font-weight:800;letter-spacing:.2px;
+  background:#e6e6e6;padding:6px 6px;border-top:1.5px solid #000;border-bottom:1.5px solid #000}
 .tot tr.mid td{font-size:${px.khata}px;font-weight:700;padding:3px 0}
 .sect{font-weight:600;letter-spacing:.6px;font-size:${px.sub}px;margin-bottom:2px}
 .ft{text-align:center;margin-top:8px;font-size:${px.sub}px}
@@ -187,10 +200,19 @@ export interface ReturnReceiptData {
 export function buildReturnHtml(data: ReturnReceiptData, shop: ShopInfo) {
   const { paper, narrow, pad, px } = metrics(shop)
 
+  // Same rule as the sales receipt: one of a thing needs no second line.
   const rows = data.items
-    .map(item => `
-      <tr><td class="${nameClass(item.product_name)}">${escapeHtml(item.product_name)}</td><td class="r nm">${formatPKR(item.line_total)}</td></tr>
-      <tr><td class="ln sep">${escapeHtml(formatQty(item.quantity))} ${escapeHtml(item.unit_name)}</td><td class="ln r sep">${formatPKR(item.unit_price)}</td></tr>`)
+    .map(item => {
+      const amount = formatPKR(item.line_total)
+      const cls = nameClass(item.product_name)
+      if (Number(item.quantity) === 1) {
+        return `
+      <tr><td class="${cls} sep">${escapeHtml(item.product_name)}</td><td class="r nm sep">${amount}</td></tr>`
+      }
+      return `
+      <tr><td class="${cls}">${escapeHtml(item.product_name)}</td><td class="r nm">${amount}</td></tr>
+      <tr><td class="ln sep" colspan="2">${escapeHtml(formatQty(item.quantity))} ${escapeHtml(item.unit_name)} &times; ${formatPKR(item.unit_price)}</td></tr>`
+    })
     .join('')
 
   const printedAt = new Date()
@@ -201,12 +223,12 @@ export function buildReturnHtml(data: ReturnReceiptData, shop: ShopInfo) {
 <title>Return ${data.return_no}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Noto+Nastaliq+Urdu&display=swap" rel="stylesheet">
 <style>
 @page{size:${paper}mm auto;margin:0}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:${paper}mm;background:#fff}
-body{font-family:'Inter',system-ui,'Segoe UI',Roboto,Arial,sans-serif;font-weight:500;
+body{font-family:'Inter Tight','Inter',system-ui,'Segoe UI',Roboto,Arial,sans-serif;font-weight:500;
   font-size:${px.body}px;line-height:1.45;color:#000;font-variant-numeric:tabular-nums;
   font-feature-settings:'tnum' 1;
   padding:4mm ${pad}mm 12mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -227,7 +249,8 @@ td{vertical-align:top;word-wrap:break-word;overflow-wrap:break-word}
 .sep{border-bottom:1px dotted #666;padding-bottom:4px}
 .r{text-align:right}
 .tot td{padding:2px 0;font-size:${px.line}px}
-.tot tr.big td{font-size:${px.total}px;font-weight:700;padding:4px 0}
+.tot tr.big td{font-size:${px.total}px;font-weight:800;
+  background:#e6e6e6;padding:6px 6px;border-top:1.5px solid #000;border-bottom:1.5px solid #000}
 .tot tr.mid td{font-size:${px.khata}px;font-weight:700;padding:3px 0}
 .ft{text-align:center;margin-top:8px;font-size:${px.sub}px}
 .ur{font-family:'Noto Nastaliq Urdu','Jameel Noori Nastaleeq',serif;direction:rtl;unicode-bidi:plaintext;
@@ -287,12 +310,12 @@ export function buildDayCloseHtml(d: DayCloseReceiptData, shop: ShopInfo) {
 <title>Day Close ${d.date}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&display=swap" rel="stylesheet">
 <style>
 @page{size:${paper}mm auto;margin:0}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:${paper}mm;background:#fff}
-body{font-family:'Inter',system-ui,'Segoe UI',Roboto,Arial,sans-serif;font-weight:500;
+body{font-family:'Inter Tight','Inter',system-ui,'Segoe UI',Roboto,Arial,sans-serif;font-weight:500;
   font-size:${px.body}px;line-height:1.45;color:#000;font-variant-numeric:tabular-nums;
   font-feature-settings:'tnum' 1;padding:4mm ${pad}mm 12mm}
 h1{font-size:${px.shop}px;text-align:center;font-weight:700;line-height:1.2}
