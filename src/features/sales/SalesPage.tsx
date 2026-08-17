@@ -92,6 +92,8 @@ const SHORTCUTS: [string, string][] = [
   ['+ (in Received)', 'pos.sc_billPlusOld'],
   ['Alt+N / Alt+H', 'pos.sc_newtab'],
   ['Alt+1…6', 'pos.sc_switchtab'],
+  ['Alt+← / Alt+→', 'pos.sc_cycletab'],
+  ['Alt+W', 'pos.sc_closetab'],
   ['Alt+C', 'pos.sc_new'],
   ['Esc', 'pos.sc_close'],
   ['F1', 'pos.sc_help'],
@@ -724,6 +726,15 @@ export default function SalesPage() {
     newSale: () => startNewSale(),
     newTab: () => newTab(),
     switchIndex: (i: number) => { if (tabs[i]) switchTab(tabs[i].id) },
+    // Step to the next/previous bill and wrap, so five open sales cycle with
+    // one hand instead of needing the right number remembered.
+    cycleTab: (dir: 1 | -1) => {
+      if (tabs.length < 2) return
+      const at = tabs.findIndex(x => x.id === activeId)
+      const next = (at + dir + tabs.length) % tabs.length
+      switchTab(tabs[next].id)
+    },
+    closeActiveTab: () => { if (activeId) closeTab(activeId) },
     toggleHelp: () => setShowHelp(v => !v),
     cycle: (dir: 1 | -1) => focusSection(dir),
     escape: () => onEscape(),
@@ -783,6 +794,9 @@ export default function SalesPage() {
             if (key === 'c') { e.preventDefault(); k.newSale() }
             else if (key === 'n' || key === 'h') { e.preventDefault(); k.newTab() }
             else if (/^[1-6]$/.test(e.key)) { e.preventDefault(); k.switchIndex(Number(e.key) - 1) }
+            else if (e.key === 'ArrowRight') { e.preventDefault(); k.cycleTab(1) }
+            else if (e.key === 'ArrowLeft') { e.preventDefault(); k.cycleTab(-1) }
+            else if (key === 'w') { e.preventDefault(); k.closeActiveTab() }
           }
       }
     }

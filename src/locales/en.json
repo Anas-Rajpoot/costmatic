@@ -188,6 +188,8 @@
     "sc_close": "Close popups",
     "sc_help": "Show / hide this help",
     "sc_newtab": "New parked sale (tab)",
+    "sc_cycletab": "Previous / next sale tab",
+    "sc_closetab": "Close this sale tab",
     "sc_switchtab": "Switch to sale tab 1–6",
     "saleTab": "Sale {{n}}",
     "newTab": "New Sale",
