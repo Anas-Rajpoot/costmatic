@@ -1,14 +1,23 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from './AuthContext'
+import { useSettings } from '@/features/settings/hooks/useSettings'
 import { APP_NAME } from '@/lib/brand'
 
 export default function LoginPage() {
   const { t } = useTranslation()
   const { signIn } = useAuth()
   const navigate = useNavigate()
+
+  // The shop's own name belongs on its own login screen. settings is readable
+  // without a session (settings_select is `using (true)`), so this works before
+  // anyone has signed in — no per-deployment env var, and it follows the name
+  // the owner sets in Settings rather than whatever the build was stamped with.
+  const { data: settings } = useSettings()
+  const shopName = settings?.shop_name?.trim() || APP_NAME
+  useEffect(() => { document.title = shopName }, [shopName])
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -37,7 +46,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-page flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <span className="text-2xl font-semibold text-accent tracking-wide">{APP_NAME}</span>
+          <span className="text-2xl font-semibold text-accent tracking-wide">{shopName}</span>
           <p className="text-ink-muted text-sm mt-1">Wholesale Shop Manager</p>
         </div>
 
