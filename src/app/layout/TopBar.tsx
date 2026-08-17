@@ -29,14 +29,17 @@ export default function TopBar({ showMenu, onMenuClick }: Props) {
 
   return (
     <header className="h-16 bg-brand-dark border-b border-white/10 flex items-center justify-between px-4 shrink-0">
-      {/* Left: hamburger on mobile/tablet, empty on desktop */}
+      {/* Left: the menu toggle — on every screen now, since the sidebar starts
+          hidden everywhere. Ctrl+L does the same thing. */}
       {showMenu ? (
         <button
           onClick={onMenuClick}
-          className="text-white/70 hover:text-white p-2 rounded-btn transition-colors"
-          aria-label="Open menu"
+          className="text-white/70 hover:text-white p-2 rounded-btn transition-colors flex items-center gap-2"
+          aria-label="Toggle menu"
+          title="Ctrl+L"
         >
           <Menu size={20} />
+          <span className="hidden lg:inline text-[11px] text-white/40 font-mono">Ctrl+L</span>
         </button>
       ) : (
         <div />

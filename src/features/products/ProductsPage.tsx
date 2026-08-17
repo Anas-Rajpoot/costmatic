@@ -1,7 +1,10 @@
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AnimatePresence } from 'framer-motion'
-import { Package, Plus, Settings2, Pencil, Trash2, Search } from 'lucide-react'
+import {
+  Package, Plus, Settings2, Pencil, Trash2, Search, ChevronRight,
+  ChevronsDownUp, ChevronsUpDown,
+} from 'lucide-react'
 import {
   useProducts, useDeleteProduct, useBulkDeleteProducts, type BulkDeleteResult,
 } from './hooks/useProducts'
@@ -69,6 +72,63 @@ export default function ProductsPage() {
   async function handleDelete(id: string) {
     await deleteProduct.mutateAsync(id)
     setConfirmDelId(null)
+  }
+
+  // ── Group by category ──
+  // 1,150 flat rows is not a list anyone can use. Grouping turns it into ~32
+  // headings you can scan, and collapsing them means the page opens on those
+  // headings instead of a wall of soft drinks. A search expands everything
+  // again, because then the rows are the point.
+  const groups = (() => {
+    const map = new Map<string, { label: string; items: Product[] }>()
+    for (const p of filtered) {
+      const label = p.category
+        ? (isUrdu ? p.category.name_ur || p.category.name_en : p.category.name_en)
+        : t('products.uncategorised')
+      if (!map.has(label)) map.set(label, { label, items: [] })
+      map.get(label)!.items.push(p)
+    }
+    return [...map.values()].sort((a, b) => {
+      // Uncategorised last, everything else alphabetical.
+      const un = t('products.uncategorised')
+      if (a.label === un) return 1
+      if (b.label === un) return -1
+      return a.label.localeCompare(b.label)
+    })
+  })()
+
+  // checkbox + name + category + brand + units + [cost] + min + stock + active + actions
+  const colCount = isAdmin ? 10 : 9
+
+  // Tracked as "what is open" rather than "what is closed", so the page always
+  // starts folded — 36 headings, not 1,150 rows — whichever of Active /
+  // Inactive / All is selected. Grouping and this default behave identically
+  // across all three.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const searching = search.trim().length > 0
+  // Asking for one category, or typing a search, IS the request to see rows.
+  const forceOpen = searching || catFilter !== '' || companyFilter !== ''
+  const isOpen = (label: string) => forceOpen || expanded.has(label)
+
+  function toggleGroup(label: string) {
+    setExpanded(s => {
+      const n = new Set(s)
+      n.has(label) ? n.delete(label) : n.add(label)
+      return n
+    })
+  }
+  const allCollapsed = expanded.size === 0
+  function toggleAllGroups() {
+    setExpanded(allCollapsed ? new Set(groups.map(g => g.label)) : new Set())
+  }
+  /** Tick a whole category — pairs with bulk delete for clearing a range. */
+  function toggleGroupSelection(items: Product[]) {
+    const allOn = items.every(p => selected.has(p.id))
+    setSelected(s => {
+      const n = new Set(s)
+      items.forEach(p => allOn ? n.delete(p.id) : n.add(p.id))
+      return n
+    })
   }
 
   // Only ever acts on what is on screen — selecting 166 beverages and then
@@ -191,8 +251,20 @@ export default function ProductsPage() {
           ))}
         </div>
 
+        {/* Hidden while a search or a specific filter is already forcing rows open */}
+        {groups.length > 1 && !forceOpen && (
+          <button
+            type="button"
+            onClick={toggleAllGroups}
+            className="flex items-center gap-1.5 h-9 px-3 rounded-input border border-line text-sm text-ink-muted hover:border-brand hover:text-brand transition-colors"
+          >
+            {allCollapsed ? <ChevronsUpDown size={14} /> : <ChevronsDownUp size={14} />}
+            {allCollapsed ? t('products.expandAll') : t('products.collapseAll')}
+          </button>
+        )}
+
         <span className="text-xs text-ink-muted tabular ms-auto">
-          {filtered.length} / {products.length}
+          {groups.length} {t('products.categoriesLabel')} · {filtered.length} / {products.length}
         </span>
       </div>
 
@@ -247,7 +319,27 @@ export default function ProductsPage() {
         ) : filtered.length === 0 ? (
           <div className="p-12 text-center">
             <Package size={36} className="mx-auto text-ink-muted/30 mb-3" />
-            <p className="text-ink-muted text-sm">{t('products.noProducts')}</p>
+            {/* A freshly seeded shop has 1,150 products and none of them active.
+                Saying "no products yet" there is simply untrue and sends the
+                owner off to add one they already have. */}
+            {products.length > 0 ? (
+              <>
+                <p className="text-ink-muted text-sm">{t('products.noneMatch')}</p>
+                {statusFilter === 'active' && (
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('inactive')}
+                    className="mt-2 text-sm text-brand hover:text-brand-dark font-medium"
+                  >
+                    {t('products.showInactive', {
+                      count: products.filter(p => !p.is_active).length,
+                    })}
+                  </button>
+                )}
+              </>
+            ) : (
+              <p className="text-ink-muted text-sm">{t('products.noProducts')}</p>
+            )}
           </div>
         ) : (
           <table className="w-full min-w-[760px] text-sm">
@@ -276,7 +368,35 @@ export default function ProductsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(p => {
+              {groups.map(g => (<Fragment key={g.label}>
+                {/* Category band — the thing that makes 1,150 rows navigable */}
+                <tr
+                  className="cursor-pointer select-none border-y border-brand/20 bg-brand-soft hover:bg-brand/15 transition-colors"
+                  onClick={() => toggleGroup(g.label)}
+                >
+                  <td className="ps-4 pe-1 py-2.5" onClick={e => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={g.items.every(p => selected.has(p.id))}
+                      onChange={() => toggleGroupSelection(g.items)}
+                      title={t('products.selectCategory')}
+                      className="w-4 h-4 rounded border-line text-brand focus:ring-brand/30 cursor-pointer"
+                    />
+                  </td>
+                  <td colSpan={colCount - 1} className="px-4 py-2.5">
+                    <span className="flex items-center gap-2">
+                      <ChevronRight
+                        size={15}
+                        className={cn('text-brand transition-transform shrink-0',
+                          isOpen(g.label) && 'rotate-90')}
+                      />
+                      <span className="font-semibold text-brand">{g.label}</span>
+                      <span className="text-xs text-brand/70 tabular">({g.items.length})</span>
+                    </span>
+                  </td>
+                </tr>
+
+                {isOpen(g.label) && g.items.map(p => {
                 const qty = stockQty(p)
                 const low = isLowStock(p)
                 return (
@@ -399,6 +519,7 @@ export default function ProductsPage() {
                   </tr>
                 )
               })}
+              </Fragment>))}
             </tbody>
           </table>
         )}

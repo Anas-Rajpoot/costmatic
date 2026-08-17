@@ -710,7 +710,9 @@ export default function SalesPage() {
     resultOpen: () => saleResult != null,
     resultNext: () => { if (saleResult) startNewSale() },
     resultPrint: () => { if (saleResult) printReceipt(saleResult.data, shop) },
-    openReturn: () => setShowReturn(true),
+    // Every shortcut that opens something closes it again — the same key both
+    // ways, so the hand never has to leave the keyboard for the mouse.
+    toggleReturn: () => setShowReturn(v => !v),
     selectLine: (dir: 1 | -1) => moveSel(dir),
     adjustLine: (delta: 1 | -1) => adjustSel(delta),
     removeSelected: () => { if (selectedKey != null) removeItem(selectedKey) },
@@ -763,7 +765,7 @@ export default function SalesPage() {
         case 'F7': e.preventDefault(); k.cycleUnit(); break
         case 'F8': e.preventDefault(); k.focusDiscount(); break
         case 'F9': e.preventDefault(); k.complete(); break
-        case 'F10': e.preventDefault(); k.openReturn(); break
+        case 'F10': e.preventDefault(); k.toggleReturn(); break
         case 'Enter': if (e.ctrlKey) { e.preventDefault(); k.complete() } break
         case 'PageDown': e.preventDefault(); k.cycle(1); break
         case 'PageUp': e.preventDefault(); k.cycle(-1); break

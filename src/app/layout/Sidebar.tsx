@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { NavLink } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   LayoutDashboard, Package, ShoppingCart, Users, Truck,
@@ -51,8 +51,36 @@ function SidebarInner({ onClose, showClose }: { onClose: () => void; showClose: 
   // until Settings → Shop Info has been filled in.
   const shopName = settings.shop_name?.trim() || APP_NAME
 
-  // Keep the browser tab in step with it, so a pinned tab is identifiable.
-  useEffect(() => { document.title = shopName }, [shopName])
+  // ── Keyboard navigation while the sidebar is open ──
+  // Ctrl+↓ / Ctrl+↑ walk the menu, Enter opens, Esc closes. Deliberately a
+  // chord rather than a bare arrow: the POS already uses plain arrows to move
+  // through the cart, and this listener is on the window.
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [cursor, setCursor] = useState(() =>
+    Math.max(0, visible.findIndex(i => i.path === location.pathname)))
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const chord = e.ctrlKey || e.metaKey
+      if (!chord || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) {
+        if (e.key === 'Escape') onClose()
+        return
+      }
+      e.preventDefault()
+      // Move and open in one go — no Enter to confirm. The step IS the choice,
+      // so the screen follows the highlight and the sidebar stays open for the
+      // next step.
+      setCursor(c => {
+        const step = e.key === 'ArrowDown' ? 1 : -1
+        const next = (c + step + visible.length) % visible.length
+        navigate(visible[next].path)
+        return next
+      })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [visible, navigate, onClose])
 
   return (
     <aside className="w-64 bg-brand-dark flex flex-col h-full">
@@ -67,16 +95,20 @@ function SidebarInner({ onClose, showClose }: { onClose: () => void; showClose: 
 
       {/* Nav */}
       <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
-        {visible.map(({ path, icon: Icon, labelKey }) => (
+        {visible.map(({ path, icon: Icon, labelKey }, i) => (
           <NavLink
             key={path}
             to={path}
             onClick={showClose ? onClose : undefined}
+            onMouseEnter={() => setCursor(i)}
             className={({ isActive }) => cn(
               'flex items-center gap-3 px-3 py-2.5 rounded-btn text-sm font-medium transition-colors duration-150',
               isActive
                 ? 'bg-brand text-white'
                 : 'text-white/70 hover:text-white hover:bg-white/10',
+              // Where Ctrl+↑/↓ has walked to — a ring, so it reads as "about to
+              // open" rather than "currently open".
+              i === cursor && 'ring-2 ring-accent/70 ring-inset',
             )}
           >
             <Icon size={18} className="shrink-0" />
@@ -98,11 +130,24 @@ export default function Sidebar({ isDesktop, drawerOpen, onClose }: Props) {
   const isRtl = document.documentElement.dir === 'rtl'
 
   if (isDesktop) {
-    // Desktop: permanent sidebar in normal document flow
+    // Desktop: sits in the layout rather than over it, but still collapses —
+    // the width belongs to the bill. Animating the width (not a transform)
+    // keeps the main column reflowing with it instead of leaving a gap.
     return (
-      <div style={{ width: 256, flexShrink: 0, height: '100%' }}>
-        <SidebarInner onClose={onClose} showClose={false} />
-      </div>
+      <AnimatePresence initial={false}>
+        {drawerOpen && (
+          <motion.div
+            key="rail"
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 256, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 36 }}
+            style={{ flexShrink: 0, height: '100%', overflow: 'hidden' }}
+          >
+            <SidebarInner onClose={onClose} showClose={false} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     )
   }
 

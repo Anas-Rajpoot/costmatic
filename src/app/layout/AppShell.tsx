@@ -4,6 +4,8 @@ import { motion } from 'framer-motion'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import { useWindowWidth } from '@/hooks/useWindowWidth'
+import { useSettings } from '@/features/settings/hooks/useSettings'
+import { APP_NAME } from '@/lib/brand'
 
 const DESKTOP_BREAKPOINT = 1024
 
@@ -15,14 +17,46 @@ function ContentLoader() {
   )
 }
 
+const SIDEBAR_KEY = 'costmatic_sidebar'
+
 export default function AppShell() {
-  const [drawerOpen, setDrawerOpen] = useState(false)
+  // Hidden by default, on every screen size. A shop counter wants the width
+  // for the bill, not for a nav rail it uses a few times a day. The choice is
+  // remembered, so a shopkeeper who prefers it pinned only says so once.
+  const [drawerOpen, setDrawerOpen] = useState(() => {
+    try { return localStorage.getItem(SIDEBAR_KEY) === 'open' } catch { return false }
+  })
   const location = useLocation()
   const width = useWindowWidth()
   const isDesktop = width >= DESKTOP_BREAKPOINT
 
-  // Close drawer on navigation or when screen becomes desktop-size
-  useEffect(() => { setDrawerOpen(false) }, [location.pathname, isDesktop])
+  useEffect(() => {
+    try { localStorage.setItem(SIDEBAR_KEY, drawerOpen ? 'open' : 'closed') } catch { /* private mode */ }
+  }, [drawerOpen])
+
+  // The tab title lives here, not in the sidebar: the sidebar unmounts when it
+  // is collapsed, and the tab should still carry the shop's name.
+  const { data: settings = {} } = useSettings()
+  const shopName = settings.shop_name?.trim() || APP_NAME
+  useEffect(() => { document.title = shopName }, [shopName])
+
+  // On a phone the drawer covers the screen, so navigating has to close it.
+  // On desktop it sits in the layout, so a pinned sidebar stays pinned.
+  useEffect(() => { if (!isDesktop) setDrawerOpen(false) }, [location.pathname, isDesktop])
+
+  // Ctrl+L (Cmd+L) toggles it — same hand that is already on the keyboard
+  // shortcuts for billing. preventDefault stops the browser stealing it for
+  // the address bar.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'l') {
+        e.preventDefault()
+        setDrawerOpen(v => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   return (
     <div className="flex h-screen bg-page overflow-hidden">
@@ -46,7 +80,7 @@ export default function AppShell() {
 
       <div className="flex flex-col flex-1 overflow-hidden min-w-0">
         <TopBar
-          showMenu={!isDesktop}
+          showMenu
           onMenuClick={() => setDrawerOpen(v => !v)}
         />
         <motion.main
